@@ -6,4 +6,5 @@ out-offline/
 .DS_Store
 content/articles.json
 content/cache/
+public/search-index.json
 .env*

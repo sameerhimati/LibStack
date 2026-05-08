@@ -7,6 +7,7 @@ import { Readability } from "@mozilla/readability";
 const VAULT = process.env.VAULT_PATH || path.join(process.env.HOME || "", "Desktop/knowledge");
 const QUEUE = path.join(VAULT, "inbox/reading-queue.md");
 const OUT = path.join(process.cwd(), "content/articles.json");
+const SEARCH_INDEX = path.join(process.cwd(), "public/search-index.json");
 const CACHE = path.join(process.cwd(), "content/cache");
 const CONCURRENCY = 4;
 const TIMEOUT_MS = 15_000;
@@ -184,6 +185,29 @@ async function main() {
   writeFileSync(OUT, JSON.stringify(library, null, 2));
   console.log(`\nWrote ${OUT}`);
   console.log(`Summary: ${okCount} fetched, ${skipCount} cached, ${failCount} failed (X/auth links open externally on iPad)`);
+
+  // Search index: flat list of unread articles with a short snippet for client-side fuse.js.
+  const publicDir = path.dirname(SEARCH_INDEX);
+  if (!existsSync(publicDir)) mkdirSync(publicDir, { recursive: true });
+  const stripHtml = (s: string) => s.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+  const searchEntries = clusters.flatMap((c) =>
+    c.articles
+      .filter((a) => !a.read)
+      .map((a) => {
+        const raw = a.excerpt || (a.content ? stripHtml(a.content) : "") || a.description || "";
+        return {
+          slug: a.slug,
+          title: a.title,
+          cluster: c.title,
+          domain: a.domain,
+          url: a.url,
+          snippet: raw.slice(0, 200),
+          hasContent: Boolean(a.content),
+        };
+      })
+  );
+  writeFileSync(SEARCH_INDEX, JSON.stringify(searchEntries));
+  console.log(`Wrote ${SEARCH_INDEX} (${searchEntries.length} entries)`);
 }
 
 main();

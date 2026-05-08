@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { loadLibrary } from "@/lib/articles";
+import Search from "@/components/Search";
 
 export default function Home() {
   const lib = loadLibrary();
@@ -10,16 +11,8 @@ export default function Home() {
     (n, c) => n + c.articles.filter((a) => !a.read && a.content).length, 0
   );
 
-  return (
+  const clusterList = (
     <div className="space-y-10">
-      <header>
-        <h1 className="text-3xl font-semibold tracking-tight">Reading list</h1>
-        <p className="mt-2 text-sm text-muted">
-          {totalUnread} unread · {totalAvailable} fetched and readable offline
-          {lib.generatedAt && <> · built {new Date(lib.generatedAt).toLocaleDateString()}</>}
-        </p>
-      </header>
-
       {lib.clusters.map((cluster) => {
         const unread = cluster.articles.filter((a) => !a.read);
         if (unread.length === 0) return null;
@@ -55,6 +48,20 @@ export default function Home() {
           </section>
         );
       })}
+    </div>
+  );
+
+  return (
+    <div className="space-y-8">
+      <header>
+        <h1 className="text-3xl font-semibold tracking-tight">Reading list</h1>
+        <p className="mt-2 text-sm text-muted">
+          {totalUnread} unread · {totalAvailable} fetched and readable offline
+          {lib.generatedAt && <> · built {new Date(lib.generatedAt).toLocaleDateString()}</>}
+        </p>
+      </header>
+
+      <Search>{clusterList}</Search>
     </div>
   );
 }
