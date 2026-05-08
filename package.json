@@ -6,8 +6,9 @@
     "build:content": "bun scripts/build-content.ts",
     "dev": "next dev",
     "build": "bun scripts/build-content.ts && next build",
+    "build:offline": "bun scripts/build-offline-bundle.ts",
     "start": "next start",
-    "export:trip": "bun scripts/build-content.ts && next build && echo '\\nDone. AirDrop ./out to your iPad and open out/index.html.'"
+    "export:trip": "bun scripts/build-content.ts && next build && bun scripts/build-offline-bundle.ts"
   },
   "dependencies": {
     "@mozilla/readability": "^0.5.0",
