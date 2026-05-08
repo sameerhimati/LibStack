@@ -1,0 +1,22 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root { color-scheme: light dark; }
+
+html, body {
+  background: theme(colors.paper);
+  color: theme(colors.ink);
+  font-feature-settings: "kern" 1, "liga" 1;
+  -webkit-text-size-adjust: 100%;
+}
+
+@media (prefers-color-scheme: dark) {
+  html, body { background: #15140f; color: #ece8df; }
+  .prose { --tw-prose-body: #ece8df; --tw-prose-headings: #fff; --tw-prose-links: #d4a574; }
+}
+
+.prose { max-width: 68ch; }
+.prose img { border-radius: 0.5rem; }
+
+a { text-underline-offset: 2px; }
