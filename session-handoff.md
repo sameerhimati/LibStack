@@ -4,66 +4,89 @@
 
 ---
 
-## Last updated: 2026-05-08 (pre-trip — scope lock + offline bundle)
+## Last updated: 2026-05-08 (eve of trip — Phase 1 shipped + KaTeX pulled forward)
 
 ### What just happened
 
-- Project scaffolded at `~/Desktop/Code/LibStack`; first commit `16d75d4` landed
-- Stack: Next.js 14 App Router + Tailwind + Bun + `@mozilla/readability`
-- Static export configured (`next.config.mjs: output: "export"`, `trailingSlash: true`)
-- First end-to-end build green: 122 entries, 13 fetched, 109 X degrades to "open original"
-- **Caught:** Next export uses absolute paths (`/_next/...`, `/article/foo/`) — broken under `file://` on iPad. Built `scripts/build-offline-bundle.ts` to produce `out-offline/` with rewritten relative paths + `index.html` appended to internal directory links. Tested: 199 rewrites across 16 HTML files, paths look correct.
-- **Scope locked** for Phase 1 and Phase 2 (see below). LibStack is OS-layer infrastructure for reading the vault; not a capture platform. Defaults to simple.
+Phase 1 closed early (~9 days ahead of the locked 2026-05-17 → 2026-05-22 window) and one Phase 2 item shipped tonight because it was breaking real articles.
+
+**Phase 1 — done:**
+- **PWA** (`4026074`) — web manifest, placeholder icons, hand-rolled SW built into `out/sw.js` (version-stamped from `Library.generatedAt`, 20 precache entries, stale-while-revalidate for HTML, cache-first for `_next/static`, network-first for JSON). `RegisterSW.tsx` only registers on production HTTPS so dev + offline-bundle paths stay no-op.
+- **Search** (same commit) — fuse.js client-side, lazy-loaded on first focus over a build-time `public/search-index.json` (122 entries, 13 with content, ~34 KB). Server-rendered cluster list preserved as `<HomeShell>` children → SSG intact. `/` focuses input, `Esc` clears.
+- **Cloudflare Pages deploy** — `libstack` project on account `3665dc371e2496fd438127cf5a335e1c`. Custom domain `reading.itamih.com` attached, cert valid, served via CF edge.
+- **GH Action in knowledge repo** (`dd85eb2`) — `.github/workflows/rebuild-libstack.yml` triggers on push to `inbox/reading-queue.md` (or manually). Checks out knowledge + LibStack, builds against the vault, deploys to CF Pages. Took two iterations: first run failed because runner Node 20 < wrangler 4.x required Node 22 — fixed with `actions/setup-node`. Run 25588459062 succeeded in 52s.
+
+**Phase 2 — pulled forward:**
+- **KaTeX + `<pre>` overflow** (`734a87e`) — server-side math rendering in `build-content.ts`. DOM-walk over text nodes, skips `pre|code|script|style|[data-no-math]`, matches `\[…\]` / `$$…$$` / `\(…\)` (multi-line aware), per-expression try/catch, idempotent because it only matches raw delimiters. KaTeX CSS imported in `globals.css`; `<pre>` and `.katex-display` get `overflow-x:auto`. MCMC article: 66 KaTeX spans rendered, 0 failed. Shipped because the math article was unreadable on `reading.itamih.com`.
 
 ### Current state
 
-- [x] First end-to-end build succeeded
-- [x] Initial git commit done (`16d75d4`)
-- [x] Offline bundle script working (`bun run build:offline` after `bun run build`, or `bun run export:trip` for full pipeline)
-- [ ] iPad AirDrop test of `out-offline/` (verify offline in Safari before trip)
+- [x] All Phase 1 items done + deployed live at `reading.itamih.com`
+- [x] Auto-deploy pipeline verified end-to-end (vault push → CF Pages live in ~50s)
+- [x] Math + code-block fix shipped + verified live (15+ KaTeX matches in deployed MCMC HTML)
+- [ ] iPad PWA install + offline test (was open before trip — Sameer to do, takes 60s on the iPad)
+- [ ] Real branded icons (placeholders ship today — `LS` wordmark on solid background; replace before any public sharing)
 
-### Tweaks made during scaffold
+### Refreshed Phase 2 scope (post-trip, June+ no-build sprint)
 
-- `next.config.ts` → `next.config.mjs` (Next 14.2 doesn't support TS config yet)
-- Removed `bun-types` from tsconfig (Next type-check pulled it; unused in app code)
-- Added `build:offline` script and `out-offline/` to `.gitignore`
+Sameer trimmed and added on 2026-05-08. Locked-list memory updated.
 
-### Phase 1 — locked (post-trip, 2026-05-17 → 2026-05-22)
+**Dropped from prior scope:**
+- Wikilinks resolution
+- Browser extension for capture (external tools fine — X bookmarks, paywalls, SPAs all stay out-of-band)
 
-1. ~~`scripts/build-offline-bundle.ts`~~ — done pre-trip (above)
-2. PWA manifest + service worker (offline-first)
-3. Cloudflare Pages deploy at `reading.itamih.com` (DNS pending)
-4. GitHub Action in the **knowledge repo**: push to `inbox/reading-queue.md` → rebuild LibStack → CF Pages deploy hook
-5. Client-side search via fuse.js over titles + first paragraph
+**Confirmed in:**
+- Sort & filter (domain, cluster, length, recency, read state, tier)
+- Mark as read / mark as reread / archive
+- Per-article notes
+- Content render quality: HTML polish, Markdown for direct .md links, PDF support (text extraction or pdf.js inline), Shiki syntax highlighting, KaTeX ✅ shipped
+- Type controls (font size, serif/sans, dark mode toggle)
+- OG meta tags
+- **Video** — YouTube detection + embed; optional dedicated Video tab with continuous "next video" queue (replaces "open original" for video URLs)
 
-### Phase 2 — June+ (no-build sprint OS-layer work)
+**Suggested adds (Sameer to confirm):**
+- Reading time estimates (word count → minutes)
+- Reading progress (scroll position persisted, localStorage)
+- Keyboard shortcuts (`j/k` next/prev, `r` mark read)
+- Per-cluster unread badges on home
+- "This week" view
+- Export-as-markdown clipboard button (respects no-write-back invariant)
 
-- Browser extension for capture (X, paywalls, SPAs uniformly — the right answer to the X problem)
-- Reading-notes inline + `[[wikilinks]]` resolution
-- Highlights with vault round-trip (architected properly, not localStorage stub)
-- Content adapters (only when a second content type is real — PDF or YouTube)
-- KaTeX, code rendering, OG meta, type controls (font size, serif/sans, dark mode toggle)
+**Open architecture question — notes/highlights persistence:**
+- A. localStorage only (ships fast, lost on device clear)
+- B. Sidecar `libstack-state` repo committed via the GH Action (synced, keeps invariant)
+- C. Write back to vault — *off the table; breaks the load-bearing invariant*
+
+Recommendation: ship A in Phase 2, graduate to B if cross-device sync becomes a real need.
+
+### Follow-ups (small, post-trip)
+
+1. **Per-article progress logging in the fetcher** — `build-content.ts` currently logs every 5 articles; on a flaky network this looks frozen. Add per-article `[i/N] fetching url…` lines + a real disk cache in `content/cache/` (path is created but never written to) so re-runs only hit URLs without content.
+2. **LibStack-side push-to-deploy workflow** — today, code changes in LibStack only deploy when run from local. Add `.github/workflows/deploy.yml` in LibStack repo that triggers on push to main; uses the same secrets pattern (CF API token + account ID) but no need for the cross-repo PAT.
+3. **Real branded icons** — replace `public/icon-*.png` placeholders.
+4. **Trim service worker fallback for `/articles.json`** — content is inlined into HTML at build, so the runtime fetch handler never fires. Either keep it as documented intent or delete it. No urgency.
 
 ### Decisions
 
-- **Deploy target: Cloudflare Pages** (2026-05-08). Static export fits, free tier, deploy hooks compose with vault-side GH Action.
-- **Defer X capture.** Vault was migrated off iCloud months ago — Shortcut→iCloud is not a path. Browser extension is the right answer, but Phase 2. Until then, X URLs degrade to "open original" (most are threads readable in the X app on signal anyway).
-- **No content-adapters refactor.** YAGNI; one happy path doesn't need abstraction. Refactor when a second type ingests for real.
-- **No half-built highlights.** Skip the UI entirely until Phase 2 round-trip is architected.
+- **Phase 1 pulled forward 9 days** (2026-05-08). Sameer greenlit autonomous execution; trip starts tomorrow but the work was small and contained. No regret — it works, it's deployed.
+- **One bundled commit for PWA + search** (vs. two split commits) because the agents' diffs interleaved through `package.json`, `bun.lock`, and `scripts/build-sw.ts`. Splitting required interactive staging that risked breaking interim states. The commit message describes both.
+- **KaTeX server-side, not client** — pre-rendered HTML, no runtime JS, works under `file://` for the offline bundle, no CDN dependency.
+- **Notes invariant preserved** — even with notes/highlights moving into Phase 2 v2, "LibStack is a derived view, never writes back to the vault" stays load-bearing. Sidecar state repo if sync is needed.
 
 ### Blockers / open questions
 
-- **DNS** — `itamih.com` zone control? Confirm before Phase 1 day 1.
-- **iPad test pre-trip** — AirDrop `out-offline/` to iPad, open `index.html` from Files.app, verify styled + nav works offline.
+- None blocking. Trip starts 2026-05-09; pick up post-2026-05-16.
 
 ### Load-bearing invariant
 
-LibStack is a **derived view, never writes back to the vault.** Every Phase 2 proposal (extension, highlights round-trip, reading-notes) must respect this. The browser extension pushes captures into the vault git repo via a deliberate path; LibStack itself stays read-only.
+LibStack is a **derived view, never writes back to the vault.** Notes/highlights in Phase 2 v2 must respect this — localStorage is fine, sidecar state repo is fine, vault round-trip is not.
 
 ### Context for next-session Claude
 
-- Source of truth: `~/Desktop/knowledge/inbox/reading-queue.md`
-- LibStack is **derived** — never write back to the vault from LibStack code
-- Owned-OS doctrine: this belongs to the same family as the vault, skills, hooks, memory. Treat as compounder infrastructure, not side project.
-- Per `~/.claude/CLAUDE.md`, X bookmarks live in vault. Reading-queue clusters group them by topic.
-- Trip context: Sameer is on a road trip 2026-05-09 → 2026-05-16, then SF move on 2026-05-15 (overlap). LibStack Phase 1 starts on return.
+- `reading.itamih.com` is live and serving. CF account: `3665dc371e2496fd438127cf5a335e1c`, project `libstack`, custom domain attached, cert valid.
+- Auto-deploy: any push to `inbox/reading-queue.md` on main in `sameerhimati/knowledge` triggers `rebuild-libstack.yml` → fresh build → CF Pages deploy in ~50s.
+- Three secrets live in the knowledge repo: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `LIBSTACK_REPO_PAT`.
+- LibStack repo code changes deploy from local with `wrangler pages deploy out --project-name=libstack` (until follow-up #2 lands).
+- `content/cache/` is created but unused — the cache is `articles.json` itself. Disk cache is a planned follow-up.
+- Per `~/.claude/CLAUDE.md`, X bookmarks live in vault; reading-queue clusters group them. ~109 X URLs short-circuit to "open original" — extension is dropped from Phase 2 so this stays.
+- Trip: Sameer is on a road trip 2026-05-09 → 2026-05-16, then SF move on 2026-05-15 (overlap). Phase 2 v2 work begins post-trip.

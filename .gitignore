@@ -9,3 +9,4 @@ content/articles.json
 content/cache/
 public/search-index.json
 .env*
+.claude/
