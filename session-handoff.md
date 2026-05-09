@@ -35,14 +35,16 @@ Sameer trimmed and added on 2026-05-08. Locked-list memory updated.
 - Wikilinks resolution
 - Browser extension for capture (external tools fine — X bookmarks, paywalls, SPAs all stay out-of-band)
 
-**Confirmed in:**
+**Confirmed in (locked 2026-05-08):**
 - Sort & filter (domain, cluster, length, recency, read state, tier)
 - Mark as read / mark as reread / archive
 - Per-article notes
 - Content render quality: HTML polish, Markdown for direct .md links, PDF support (text extraction or pdf.js inline), Shiki syntax highlighting, KaTeX ✅ shipped
 - Type controls (font size, serif/sans, dark mode toggle)
 - OG meta tags
-- **Video** — YouTube detection + embed; optional dedicated Video tab with continuous "next video" queue (replaces "open original" for video URLs)
+- **Video** — YouTube detection + embed; dedicated Video tab with continuous "next video" queue (replaces "open original" for video URLs)
+- **Image localization** — download external `<img>` at build time, rewrite URLs to relative paths under `out/article/<slug>/images/`. Closes the only remaining offline gap. Adds maybe 5–10 MB per article-with-images to the cache; budget is fine.
+- **Highlighting** — text selection + `<mark>` wrapping + persistence. Recommendation: ship localStorage first (one device, no auth, fast). If cross-device sync becomes a real need, graduate to a tiny CF Worker + KV (`api.reading.itamih.com/api/highlights/<slug>`, ~30 lines, shared-secret auth via localStorage). Vault round-trip stays off the table.
 
 **Suggested adds (Sameer to confirm):**
 - Reading time estimates (word count → minutes)
@@ -51,13 +53,6 @@ Sameer trimmed and added on 2026-05-08. Locked-list memory updated.
 - Per-cluster unread badges on home
 - "This week" view
 - Export-as-markdown clipboard button (respects no-write-back invariant)
-
-**Open architecture question — notes/highlights persistence:**
-- A. localStorage only (ships fast, lost on device clear)
-- B. Sidecar `libstack-state` repo committed via the GH Action (synced, keeps invariant)
-- C. Write back to vault — *off the table; breaks the load-bearing invariant*
-
-Recommendation: ship A in Phase 2, graduate to B if cross-device sync becomes a real need.
 
 ### Follow-ups (small, post-trip)
 
