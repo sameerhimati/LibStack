@@ -2,6 +2,7 @@ node_modules/
 .next/
 out/
 out-offline/
+out-atlas/atlas-codewalk.md
 *.log
 .DS_Store
 content/articles.json
