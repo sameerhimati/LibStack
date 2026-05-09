@@ -3,6 +3,7 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import path from "node:path";
 import { JSDOM } from "jsdom";
 import { Readability } from "@mozilla/readability";
+import katex from "katex";
 
 const VAULT = process.env.VAULT_PATH || path.join(process.env.HOME || "", "Desktop/knowledge");
 const QUEUE = path.join(VAULT, "inbox/reading-queue.md");
@@ -100,6 +101,105 @@ function parseQueue(md: string): Cluster[] {
   return clusters.filter((c) => c.articles.length > 0);
 }
 
+// Math rendering stats — accumulated across all articles in a build run.
+let mathRendered = 0;
+let mathFailed = 0;
+const mathFailures: string[] = [];
+
+// Match display \[...\], display $$...$$, inline \(...\). Multi-line aware (`s` flag).
+// Order matters: try display before inline so \[\] wins over \(\). $$ is its own delimiter.
+const MATH_PATTERNS: { re: RegExp; displayMode: boolean }[] = [
+  { re: /\\\[([\s\S]+?)\\\]/g, displayMode: true },
+  { re: /\$\$([\s\S]+?)\$\$/g, displayMode: true },
+  { re: /\\\(([\s\S]+?)\\\)/g, displayMode: false },
+];
+
+const SKIP_TAGS = new Set(["PRE", "CODE", "SCRIPT", "STYLE"]);
+
+function renderMath(html: string, articleUrl: string): string {
+  const dom = new JSDOM(`<!DOCTYPE html><body>${html}</body>`);
+  const doc = dom.window.document;
+  const NodeFilter = dom.window.NodeFilter;
+
+  // Collect text nodes first (mutating during walk is unsafe).
+  const textNodes: Text[] = [];
+  const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT, {
+    acceptNode(node) {
+      let p: Element | null = (node as Text).parentElement;
+      while (p) {
+        if (SKIP_TAGS.has(p.tagName)) return NodeFilter.FILTER_REJECT;
+        if (p.hasAttribute("data-no-math")) return NodeFilter.FILTER_REJECT;
+        p = p.parentElement;
+      }
+      return NodeFilter.FILTER_ACCEPT;
+    },
+  });
+  let n: Node | null;
+  while ((n = walker.nextNode())) textNodes.push(n as Text);
+
+  for (const text of textNodes) {
+    const original = text.data;
+    if (!original) continue;
+    // Quick reject: if no math delimiter is present, skip.
+    if (!/\\\[|\\\(|\$\$/.test(original)) continue;
+
+    // Find all non-overlapping matches across all patterns, sorted by start index.
+    type Match = { start: number; end: number; latex: string; displayMode: boolean };
+    const matches: Match[] = [];
+    for (const { re, displayMode } of MATH_PATTERNS) {
+      re.lastIndex = 0;
+      let m: RegExpExecArray | null;
+      while ((m = re.exec(original)) !== null) {
+        matches.push({ start: m.index, end: m.index + m[0].length, latex: m[1], displayMode });
+      }
+    }
+    if (matches.length === 0) continue;
+    matches.sort((a, b) => a.start - b.start);
+    // Drop overlaps (earlier match wins).
+    const ordered: Match[] = [];
+    let cursor = 0;
+    for (const m of matches) {
+      if (m.start < cursor) continue;
+      ordered.push(m);
+      cursor = m.end;
+    }
+
+    // Build a fragment: text-before + rendered span + text-after, repeating.
+    const frag = doc.createDocumentFragment();
+    let pos = 0;
+    for (const m of ordered) {
+      if (m.start > pos) frag.appendChild(doc.createTextNode(original.slice(pos, m.start)));
+      try {
+        const rendered = katex.renderToString(m.latex, {
+          displayMode: m.displayMode,
+          throwOnError: false,
+          output: "html",
+          strict: "ignore",
+        });
+        const wrapper = doc.createElement(m.displayMode ? "div" : "span");
+        wrapper.innerHTML = rendered;
+        // Move children out of wrapper into the fragment so we don't add an extra div/span.
+        // Actually keep the wrapper — KaTeX's own span.katex / span.katex-display is what we want;
+        // wrapper is just a parsing host. Append its children directly.
+        while (wrapper.firstChild) frag.appendChild(wrapper.firstChild);
+        mathRendered++;
+      } catch (e: any) {
+        const snippet = original.slice(m.start, m.end);
+        mathFailed++;
+        const msg = `[math] failed in ${articleUrl}: ${snippet.slice(0, 80)}`;
+        if (mathFailures.length < 10) mathFailures.push(msg);
+        console.warn(msg);
+        frag.appendChild(doc.createTextNode(snippet));
+      }
+      pos = m.end;
+    }
+    if (pos < original.length) frag.appendChild(doc.createTextNode(original.slice(pos)));
+    text.parentNode?.replaceChild(frag, text);
+  }
+
+  return doc.body.innerHTML;
+}
+
 async function fetchWithTimeout(url: string): Promise<Response> {
   const ac = new AbortController();
   const t = setTimeout(() => ac.abort(), TIMEOUT_MS);
@@ -131,7 +231,7 @@ async function extractArticle(url: string): Promise<Partial<Article>> {
       title: article.title || undefined,
       byline: article.byline || undefined,
       excerpt: article.excerpt || undefined,
-      content: article.content,
+      content: renderMath(article.content, url),
       fetchedAt: new Date().toISOString(),
     };
   } catch (e: any) {
@@ -166,7 +266,8 @@ async function main() {
       const a = queue.shift(); if (!a) break;
       const cached = cache[a.url];
       if (cached?.content) {
-        a.content = cached.content; a.byline = cached.byline; a.excerpt = cached.excerpt;
+        a.content = renderMath(cached.content, a.url);
+        a.byline = cached.byline; a.excerpt = cached.excerpt;
         a.fetchedAt = cached.fetchedAt; skipCount++;
       } else {
         const r = await extractArticle(a.url);
@@ -185,6 +286,7 @@ async function main() {
   writeFileSync(OUT, JSON.stringify(library, null, 2));
   console.log(`\nWrote ${OUT}`);
   console.log(`Summary: ${okCount} fetched, ${skipCount} cached, ${failCount} failed (X/auth links open externally on iPad)`);
+  console.log(`Math: ${mathRendered} rendered, ${mathFailed} failed`);
 
   // Search index: flat list of unread articles with a short snippet for client-side fuse.js.
   const publicDir = path.dirname(SEARCH_INDEX);

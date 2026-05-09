@@ -1,3 +1,5 @@
+@import "katex/dist/katex.min.css";
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -18,5 +20,19 @@ html, body {
 
 .prose { max-width: 68ch; }
 .prose img { border-radius: 0.5rem; }
+
+/* Code blocks: scroll horizontally instead of truncating, preserve whitespace. */
+.prose pre {
+  max-width: 100%;
+  overflow-x: auto;
+  white-space: pre;
+}
+
+/* KaTeX display math can overflow on narrow screens — let it scroll horizontally. */
+.katex-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0.25rem 0;
+}
 
 a { text-underline-offset: 2px; }
