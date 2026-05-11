@@ -36,6 +36,22 @@ Acceptance: push a new article URL to the vault, see it appear on `reading.itami
 
 ---
 
+## Phase 2 v2 — Vault round-trip (this week, 2026-05-10 → 2026-05-16, vacation async)
+
+Goal: LibStack stops being read-only. Phone-side reading work (notes, mark-read, highlights) writes back to the vault via a Cloudflare Worker, scoped to three write types only. See `PLAN-vault-bridge.md` in this repo for the full execution spec.
+
+- [ ] CF Worker `vault-bridge` (`workers/vault-bridge/`) — three endpoints: `/api/notes`, `/api/mark-read`, `/api/highlight`. Shared-secret auth, GitHub API commits to `sameerhimati/knowledge`.
+- [ ] PWA UI — notes textarea (5s autosave), mark-read button, highlight-on-select, Settings component for shared-secret entry.
+- [ ] `.github/workflows/deploy-worker.yml` — push to `workers/vault-bridge/**` → `bunx wrangler deploy`.
+- [ ] Update `session-handoff.md` line 78 invariant — three scoped write-backs, all other state stays read-only.
+- [ ] Companion: nightly `/compile` cron in the knowledge vault distills captures into atomic notes (lives in vault repo, not here).
+
+Acceptance: open LibStack on phone, take a note + mark-read + highlight one article, see commit in vault repo within 5s. Nightly compile produces atomic notes by next morning.
+
+**Explicit non-goals:** archive state, highlight rendering on subsequent reads, GBrain integration (rejected).
+
+---
+
 ## Phase 2 — Vault integration (June+, fits the deliberate June "no-build" sprint as OS-layer work)
 
 Goal: LibStack becomes the reading + thinking surface, not just a reader. Compounds the vault's existing reading-notes/ pattern.
@@ -55,11 +71,22 @@ Acceptance: read an article, highlight a line, watch it appear as a note in the 
 
 Not committed to. Listed so they don't get forgotten.
 
-- [ ] Mobile capture: paste a URL on phone, trigger fetch + commit to `inbox/reading-queue.md`
+### Live render features
+- [ ] **"This Week" surface** — read-only home view that loads `daily/W##.md` and surfaces the lint-generated todos + ≤3 active reads + 1 compile target. Phone-first.
 - [ ] AI summary per article (Claude API, cached)
 - [ ] Cross-article wikigraph (article A cites article B, render as graph)
 - [ ] Reading streaks / cadence visualization
 - [ ] Multi-vault support (if Sameer ever has separate work/personal vaults)
+
+### June exploration threads (Mac mini ambient agent era)
+
+Not LibStack code per se — LibStack is the render surface, an ambient agent on the Mac mini does the capture. Documented here so the loop is visible.
+
+- [ ] **iMessage → reading-queue** — forward a link to a dedicated number/contact, ambient agent on Mac mini parses, commits to `inbox/reading-queue.md`. Existing rebuild workflow lights it up in LibStack within ~50s. Replaces the generic "paste a URL on phone" idea with a concrete pipeline. (Original generic item: paste a URL on phone, trigger fetch + commit to `inbox/reading-queue.md`.)
+- [ ] **Hermes Agent exploration** — single-channel ambient runner for one repeatable task (TBD: maybe nightly `/compile`, maybe weekly reading triage). Skill-accumulation loop. Single use case to start, no skill marketplace, no third-party skills. Decision point in June.
+- [ ] **OpenClaw on Mac mini** — gateway-first runtime, bound to loopback + Tailscale Serve. Single channel (iMessage) and single use case (capture-to-queue) to start. Defer all multi-channel/multi-skill work until after the single channel proves itself.
+
+**Constraints (carry forward from research):** GBrain rejected. No third-party skills from ClawHub (12% malware rate). No `hermes claw cleanup` ever. No public exposure of the Gateway port — loopback + Tailscale only.
 
 ---
 
