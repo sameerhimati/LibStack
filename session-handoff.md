@@ -76,7 +76,12 @@ None blocking. Ready to fly.
 
 ### Load-bearing invariant
 
-LibStack is a **derived view, never writes back to the vault.** Notes/highlights in Phase 2 v2 must respect this — localStorage is fine, sidecar state repo is fine, vault round-trip is not.
+LibStack writes to the vault are:
+1. scoped to explicit contracts defined in `PLAN-vault-bridge.md` (or successor specs)
+2. source-tagged in file headers (e.g., `Source: libstack`)
+3. auditable — each write produces a single commit with a clear message
+
+The vault git repo remains source-of-truth for all derived state. Adding new write types or new destinations requires a deliberate spec update, not silent expansion.
 
 ### Context for next-session Claude
 

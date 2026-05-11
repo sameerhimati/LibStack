@@ -10,3 +10,4 @@ content/cache/
 public/search-index.json
 .env*
 .claude/
+tsconfig.tsbuildinfo

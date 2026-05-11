@@ -38,17 +38,18 @@ Acceptance: push a new article URL to the vault, see it appear on `reading.itami
 
 ## Phase 2 v2 — Vault round-trip (this week, 2026-05-10 → 2026-05-16, vacation async)
 
-Goal: LibStack stops being read-only. Phone-side reading work (notes, mark-read, highlights) writes back to the vault via a Cloudflare Worker, scoped to three write types only. See `PLAN-vault-bridge.md` in this repo for the full execution spec.
+Goal: LibStack stops being read-only. Phone-side reading work (notes, mark-read) writes back to the vault via a Cloudflare Worker, scoped to two write types in v1. See `PLAN-vault-bridge.md` for the full execution spec.
 
-- [ ] CF Worker `vault-bridge` (`workers/vault-bridge/`) — three endpoints: `/api/notes`, `/api/mark-read`, `/api/highlight`. Shared-secret auth, GitHub API commits to `sameerhimati/knowledge`.
-- [ ] PWA UI — notes textarea (5s autosave), mark-read button, highlight-on-select, Settings component for shared-secret entry.
+- [ ] CF Worker `vault-bridge` (`workers/vault-bridge/`) — two endpoints: `/api/notes`, `/api/mark-read`. Shared-secret auth (stored in IndexedDB on the client), GitHub API commits to `sameerhimati/knowledge`. URL normalization for mark-read matching.
+- [ ] PWA UI — notes textarea (5s autosave, IndexedDB write queue with retry on reconnect), mark-read button, Settings component for shared-secret entry.
+- [ ] Highlights deferred to v1.1 (proper iOS Safari selection UX design).
 - [ ] `.github/workflows/deploy-worker.yml` — push to `workers/vault-bridge/**` → `bunx wrangler deploy`.
-- [ ] Update `session-handoff.md` line 78 invariant — three scoped write-backs, all other state stays read-only.
-- [ ] Companion: nightly `/compile` cron in the knowledge vault distills captures into atomic notes (lives in vault repo, not here).
+- [ ] Update `session-handoff.md` invariant — hygiene-based (scoped contracts, source-tagged, auditable; vault stays SoT).
+- [ ] Companion: nightly `/compile` cron in the knowledge vault distills captures into atomic notes (separate plan, redesigned as iMessage-interactive; lives in vault repo, not here).
 
-Acceptance: open LibStack on phone, take a note + mark-read + highlight one article, see commit in vault repo within 5s. Nightly compile produces atomic notes by next morning.
+Acceptance: open LibStack on phone, take a note + mark-read one article, see commits in vault repo within 5s. End-to-end loop: phone note (in flight, no network) → IndexedDB queue → WiFi reconnect → vault commit → next morning `/compile` distills.
 
-**Explicit non-goals:** archive state, highlight rendering on subsequent reads, GBrain integration (rejected).
+**Explicit non-goals:** highlights in v1 (deferred), archive state, GBrain integration (rejected).
 
 ---
 
