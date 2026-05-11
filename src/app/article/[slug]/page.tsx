@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { allArticles, findBySlug } from "@/lib/articles";
+import ModeBadge from "@/components/ModeBadge";
 
 export function generateStaticParams() {
   return allArticles()
@@ -16,7 +17,10 @@ export default function ArticlePage({ params }: { params: { slug: string } }) {
     <article className="space-y-6">
       <div className="space-y-2">
         <Link href="/" className="text-sm text-muted hover:text-accent">← Back</Link>
-        <h1 className="text-3xl font-semibold tracking-tight font-serif">{article.title}</h1>
+        <div className="flex items-baseline gap-3">
+          <ModeBadge mode={article.mode} />
+          <h1 className="text-3xl font-semibold tracking-tight font-serif">{article.title}</h1>
+        </div>
         <div className="text-sm text-muted">
           {article.byline && <span>{article.byline} · </span>}
           <span>{article.domain}</span>

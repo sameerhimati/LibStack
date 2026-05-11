@@ -13,6 +13,8 @@ const CACHE = path.join(process.cwd(), "content/cache");
 const CONCURRENCY = 4;
 const TIMEOUT_MS = 15_000;
 
+type Mode = "Q" | "A" | "H";
+
 type Article = {
   slug: string;
   title: string;
@@ -20,6 +22,7 @@ type Article = {
   description?: string;
   cluster: string;
   tier?: string;
+  mode?: Mode;
   read: boolean;
   byline?: string;
   excerpt?: string;
@@ -73,9 +76,14 @@ function parseQueue(md: string): Cluster[] {
     }
     if (line && !line.startsWith(">")) descriptionPending = false;
 
-    const item = line.match(/^-\s+\[(x| )\]\s+\[([^\]]+)\]\(([^)]+)\)(?:\s*[—-]\s*(.*))?$/);
+    // Optional mode tag prefix between the checkbox and the title link:
+    //   - [ ] [Q] [Title](url) — desc
+    //   - [ ] [A] [Title](url)
+    //   - [ ] [H] [Title](url)
+    // Untagged entries still match (mode is undefined).
+    const item = line.match(/^-\s+\[(x| )\]\s+(?:\[([QAH])\]\s+)?\[([^\]]+)\]\(([^)]+)\)(?:\s*[—-]\s*(.*))?$/);
     if (item && current) {
-      const [, mark, title, url, desc] = item;
+      const [, mark, modeTag, title, url, desc] = item;
       const cleanTitle = title.replace(/^@\w+:\s*/, "").replace(/\s+⭐.*$/, "").trim();
       current.articles.push({
         slug: slugify(cleanTitle),
@@ -84,6 +92,7 @@ function parseQueue(md: string): Cluster[] {
         description: desc?.trim(),
         cluster: current.title,
         tier: currentTier,
+        mode: modeTag as Mode | undefined,
         read: mark === "x",
         domain: domainOf(url),
       });
@@ -303,6 +312,7 @@ async function main() {
           cluster: c.title,
           domain: a.domain,
           url: a.url,
+          mode: a.mode,
           snippet: raw.slice(0, 200),
           hasContent: Boolean(a.content),
         };

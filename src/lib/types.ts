@@ -1,3 +1,5 @@
+export type Mode = "Q" | "A" | "H";
+
 export type Article = {
   slug: string;
   title: string;
@@ -5,6 +7,7 @@ export type Article = {
   description?: string;
   cluster: string;
   tier?: string;
+  mode?: Mode;
   read: boolean;
   byline?: string;
   excerpt?: string;

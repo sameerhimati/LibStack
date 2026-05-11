@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type Fuse from "fuse.js";
+import type { Mode } from "@/lib/types";
+import ModeBadge from "./ModeBadge";
 
 export type SearchEntry = {
   slug: string;
@@ -9,6 +11,7 @@ export type SearchEntry = {
   cluster: string;
   domain: string;
   url: string;
+  mode?: Mode;
   snippet: string;
   hasContent: boolean;
 };
@@ -117,6 +120,7 @@ export default function Search({ children }: Props) {
                 return (
                   <li key={r.slug} className="py-3">
                     <div className="flex items-baseline gap-3">
+                      <ModeBadge mode={r.mode} />
                       <a
                         href={href}
                         {...(external ? { target: "_blank", rel: "noreferrer" } : {})}
