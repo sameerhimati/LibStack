@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { allArticles, findBySlug } from "@/lib/articles";
 import ModeBadge from "@/components/ModeBadge";
+import ArticleActions from "@/components/ArticleActions";
 
 export function generateStaticParams() {
   return allArticles()
@@ -31,6 +32,12 @@ export default function ArticlePage({ params }: { params: { slug: string } }) {
           <p className="text-sm text-muted italic">{article.description}</p>
         )}
       </div>
+      <ArticleActions
+        slug={article.slug}
+        title={article.title}
+        url={article.url}
+        mode={article.mode}
+      />
       <div
         className="prose prose-stone dark:prose-invert font-serif"
         dangerouslySetInnerHTML={{ __html: article.content }}

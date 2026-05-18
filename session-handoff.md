@@ -4,45 +4,42 @@
 
 ---
 
-## Last updated: 2026-05-11 (vault-bridge spec refined, build deferred to next session)
+## Last updated: 2026-05-18 (vault-bridge v1 code complete — deploy + phone test gated on manual CF setup)
 
 ### What just happened — recent arc
 
-Mid-vacation pickup. Two parallel CC sessions coordinated on a substantial Phase 2 v2 expansion:
+**This session — vault-bridge v1 build (LibStack-rooted, not yet committed):**
+- Started with a ~50-min filesystem wedge: orphaned `mv .next` + `bunx next build` processes from a prior session's verify/build loop were stuck in interruptible-sleep, jamming all working-tree IO (`git status`, file reads hung; `.git/` reads worked). Killed pids 29763/32932/32976/33154/33157 (state S, not D — no reboot needed) with Sameer's go-ahead; FS recovered immediately. Not the concurrent vault session — those were LibStack-cwd build orphans.
+- Built all of vault-bridge v1 per `PLAN-vault-bridge.md`:
+  - `workers/vault-bridge/` (index.ts + wrangler.toml + package.json + tsconfig) — `/api/notes` + `/api/mark-read`, x-secret auth, URL normalization, optimistic-concurrency GitHub commits, CORS. Worker typechecks clean.
+  - `src/lib/write-queue.ts` + `src/lib/vault-bridge.ts` — IndexedDB queue + settings store, send-or-queue, reconnect flush, 4xx-terminal/5xx-transient/401-recoverable classification.
+  - `src/components/{Settings,SyncManager,ArticleActions}.tsx` + wired into `layout.tsx` and `article/[slug]/page.tsx`.
+  - `.github/workflows/deploy-worker.yml` — first workflow in the LibStack repo.
+- Verified: repo `tsc --noEmit` clean, `next build` green (24 static pages incl. 20 article pages; client components prerender-safe).
+- **Two deliberate deviations from the spec (flagged for veto, not yet vetoed):** (1) plain `fetch` to GitHub Contents API instead of `@octokit/core`; (2) CORS added to the worker (cross-origin correctness, not in plan).
+- **Not committed.** Working tree dirty: new `workers/`, `.github/`, `src/components/{ArticleActions,Settings,SyncManager}.tsx`, `src/lib/{vault-bridge,write-queue}.ts`; modified `layout.tsx`, `article/[slug]/page.tsx`, `ROADMAP.md`, this file. `workers/vault-bridge/bun.lock` committed-to-be (needed by `--frozen-lockfile` in CI); `node_modules` gitignored.
 
-**This session — vault-bridge spec refinement (`f9e67a8`):**
-- Walked through 8 architectural decisions on `PLAN-vault-bridge.md` (originally drafted in `c167285` from a prior session)
-- All 8 resolved interactively; plan file at `~/.claude/plans/eventual-inventing-cherny.md`
-- PLAN, ROADMAP, and the load-bearing invariant in this handoff all updated to match the refined scope
-- **Net change vs. original spec:** v1 ships **notes + mark-read only**, highlights deferred to v1.1, IndexedDB write queue + IndexedDB secret storage, URL normalization for mark-read, capture dir renamed from brand-coupled `libstack-captures/` to generic `captures/`
+**Prior session — vault-bridge spec refinement (`f9e67a8`):** 8 architectural decisions resolved (table below). Decision log: `~/.claude/plans/eventual-inventing-cherny.md`.
 
-**Concurrent vault-rooted session — mode tags + reorg (`d4e5722` LibStack, `0a05e16` knowledge):**
-- Added `[Q]/[A]/[H]` mode tag prefixes to `inbox/reading-queue.md` entries (Quick X thread <10min / Article 20-40min / Heavy paper 1-2hr+)
-- LibStack parser updated to extract `Mode`, new `ModeBadge` + `ClusterSection` components, per-cluster filter row (only renders for modes actually present)
-- Worked sample applied to "BUILD: Agent Memory & Personalization" cluster (6×Q, 2×A); full reorg plan staged as HTML comment at the top of `reading-queue.md`, applies W20 during `/lint`
-- That session also redesigned Section B (`/compile` companion) from launchd-fire-forget to iMessage-interactive (nightly cron pings phone with "3 ready, reply Y/skip/title", reply gates each distill) — research thread, not built yet
+**Concurrent vault-rooted session:** handling Section B (`/compile` iMessage redesign) in the knowledge vault. Independent of this worker — it reads `inbox/raw/captures/notes/<slug>.md` later. No build-time dependency. Did not touch LibStack (HEAD still `d9c59cf`).
 
 ### Current live state
 
-- `reading.itamih.com` — 129 queue entries, 19 fetched with full content, 13 KaTeX-rendered articles, mode-tag badges + cluster filters live after next vault push (or run `gh workflow run rebuild-libstack.yml --repo sameerhimati/knowledge` to deploy now)
-- Auto-deploy: any push to `inbox/reading-queue.md` on main in `sameerhimati/knowledge` → ~50s to live
-- PWA installable on iPhone + iPad via Safari → Share → Add to Home Screen
-- All commits pushed to origin on both repos
+- `reading.itamih.com` — live, last deployed from `d9c59cf` (vault-bridge code is local-only, not yet deployed).
+- Auto-deploy: any push to `inbox/reading-queue.md` on main in `sameerhimati/knowledge` → ~50s to live (unchanged).
+- PWA installable on iPhone + iPad via Safari → Share → Add to Home Screen.
+- vault-bridge changes are **local, uncommitted, undeployed**.
 
-### Next session — build vault-bridge v1 worker
+### Next session — deploy vault-bridge v1 + iOS phone test
 
-**Where:** **LibStack-rooted session** (`cd ~/Desktop/Code/LibStack`). All worker code (`workers/vault-bridge/`), PWA changes (`src/app/article/[slug]/page.tsx`, `src/lib/`, `src/components/Settings.tsx`), and deploy workflow (`.github/workflows/deploy-worker.yml`) live in LibStack repo. The vault is only touched at runtime by the worker's commits — no build-time vault access needed.
+**Decide first:** accept or revert the two deviations (plain `fetch` vs octokit; CORS). Then commit (one feat commit) + push.
 
-**Specs to read first:**
-1. `PLAN-vault-bridge.md` (in this repo) — the refined execution spec
-2. `~/.claude/plans/eventual-inventing-cherny.md` — full decision log (A–H) with rationale, in case any decision needs revisiting
+**Manual setup (only Sameer can do — gated):**
+1. CF dashboard: create `vault-bridge` worker (or let `wrangler deploy` create it), set secrets `GITHUB_PAT` (fine-grained PAT, `contents:write` on `sameerhimati/knowledge` **only**) + `SHARED_SECRET` (32-char random).
+2. Add `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID` to the **LibStack** GitHub repo secrets (they currently exist only on the knowledge repo — the deploy-worker workflow needs them on LibStack).
+3. Deploy: push (workflow fires) or `cd workers/vault-bridge && bunx wrangler deploy` locally.
 
-**Estimated effort:** 3–5 hours including iOS phone test pass. Build order is in PLAN-vault-bridge.md section "Build order."
-
-**Manual setup before the build session can deploy:**
-- CF Worker dashboard: create `vault-bridge` worker (or `wrangler init` handles it), set secrets `GITHUB_PAT` (vault repo, `contents:write` scope) + `SHARED_SECRET` (32-char random)
-
-**Concurrent work to coordinate with:** the vault-rooted session is handling Section B (`/compile` iMessage redesign). Section A (this worker) is independent — it commits capture files to `inbox/raw/captures/notes/<slug>.md`; Section B reads those captures later. No build-time dependency.
+**Then phone test** per PLAN-vault-bridge.md "Verification" → "PWA on phone": enter secret+worker URL in Settings, note autosave persists, mark-read flips queue + drops article in ~60s, airplane-mode queue flushes on reconnect, force-quit-mid-pending reopen flushes. curl smoke tests for happy/normalization/404/409 are in the same section.
 
 ### Resolved decisions (vault-bridge v1)
 

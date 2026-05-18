@@ -40,11 +40,13 @@ Acceptance: push a new article URL to the vault, see it appear on `reading.itami
 
 Goal: LibStack stops being read-only. Phone-side reading work (notes, mark-read) writes back to the vault via a Cloudflare Worker, scoped to two write types in v1. See `PLAN-vault-bridge.md` for the full execution spec.
 
-- [ ] CF Worker `vault-bridge` (`workers/vault-bridge/`) — two endpoints: `/api/notes`, `/api/mark-read`. Shared-secret auth (stored in IndexedDB on the client), GitHub API commits to `sameerhimati/knowledge`. URL normalization for mark-read matching.
-- [ ] PWA UI — notes textarea (5s autosave, IndexedDB write queue with retry on reconnect), mark-read button, Settings component for shared-secret entry.
+- [x] CF Worker `vault-bridge` (`workers/vault-bridge/`) — two endpoints: `/api/notes`, `/api/mark-read`. Shared-secret auth (stored in IndexedDB on the client), GitHub API commits to `sameerhimati/knowledge` via plain `fetch` (not octokit — fewer deps, no Workers-compat risk). URL normalization for mark-read matching. CORS added (cross-origin PWA→worker correctness).
+- [x] PWA UI — notes textarea (5s autosave, IndexedDB write queue with retry on reconnect), mark-read button, Settings component for shared-secret entry.
 - [ ] Highlights deferred to v1.1 (proper iOS Safari selection UX design).
-- [ ] `.github/workflows/deploy-worker.yml` — push to `workers/vault-bridge/**` → `bunx wrangler deploy`.
-- [ ] Update `session-handoff.md` invariant — hygiene-based (scoped contracts, source-tagged, auditable; vault stays SoT).
+- [x] `.github/workflows/deploy-worker.yml` — push to `workers/vault-bridge/**` → `bunx wrangler deploy`.
+- [x] Update `session-handoff.md` invariant — hygiene-based (scoped contracts, source-tagged, auditable; vault stays SoT).
+
+> **Code complete 2026-05-18, deploy/phone-test gated.** All code typechecks + `next build` green (24 static pages). Remaining: CF dashboard worker + secrets (`GITHUB_PAT`, `SHARED_SECRET`), `CLOUDFLARE_*` secrets on the LibStack repo, iOS phone test pass.
 - [ ] Companion: nightly `/compile` cron in the knowledge vault distills captures into atomic notes (separate plan, redesigned as iMessage-interactive; lives in vault repo, not here).
 
 Acceptance: open LibStack on phone, take a note + mark-read one article, see commits in vault repo within 5s. End-to-end loop: phone note (in flight, no network) → IndexedDB queue → WiFi reconnect → vault commit → next morning `/compile` distills.

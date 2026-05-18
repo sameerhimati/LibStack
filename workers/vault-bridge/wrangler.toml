@@ -1,0 +1,9 @@
+name = "vault-bridge"
+main = "src/index.ts"
+account_id = "3665dc371e2496fd438127cf5a335e1c"
+compatibility_date = "2024-05-12"
+workers_dev = true
+
+# Secrets (set via `wrangler secret put` or the CF dashboard — never commit):
+#   GITHUB_PAT     fine-grained PAT, contents:write on sameerhimati/knowledge only
+#   SHARED_SECRET  32-char random, entered once in the PWA Settings panel
