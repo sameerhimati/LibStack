@@ -78,20 +78,19 @@ export default function ArticleActions({
   };
 
   return (
-    <div className="space-y-3 rounded-lg border border-black/10 p-4 dark:border-white/10">
-      <div className="flex items-center justify-between">
+    <div className="sticky top-0 z-20 -mx-6 space-y-2 border-b border-black/10 bg-paper/95 px-6 py-3 backdrop-blur dark:border-white/10 dark:bg-[#15140f]/95">
+      <div className="flex items-center justify-between gap-3">
         <button
           onClick={markRead}
           disabled={read}
-          className="rounded bg-accent px-3 py-1.5 text-sm text-paper hover:opacity-90 disabled:opacity-50"
+          className="shrink-0 rounded bg-accent px-3 py-1.5 text-sm text-paper hover:opacity-90 disabled:opacity-50"
         >
           {read ? "✓ read" : "Mark read"}
         </button>
-        <span className="text-xs text-muted">
-          {pending > 0 ? `pending sync (${pending})` : saveLabel[save]}
+        <span className="truncate text-xs text-muted">
+          {readMsg ?? (pending > 0 ? `pending sync (${pending})` : saveLabel[save])}
         </span>
       </div>
-      {readMsg && <p className="text-xs text-muted">{readMsg}</p>}
       <textarea
         value={note}
         onChange={(e) => onNoteChange(e.target.value)}
@@ -100,8 +99,7 @@ export default function ArticleActions({
           void flushNote(note);
         }}
         placeholder="Notes — autosaves to the vault for /compile"
-        rows={4}
-        className="w-full resize-y rounded border border-black/15 bg-transparent p-2 text-sm dark:border-white/15"
+        className="block h-20 w-full resize-none overflow-y-auto rounded border border-black/15 bg-transparent p-2 text-sm dark:border-white/15"
       />
     </div>
   );

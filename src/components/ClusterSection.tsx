@@ -10,21 +10,25 @@ type Filter = "all" | Mode;
 const MODE_ORDER: Mode[] = ["Q", "A", "H"];
 
 export default function ClusterSection({ cluster }: { cluster: Cluster }) {
-  const unread = useMemo(
-    () => cluster.articles.filter((a) => !a.read),
-    [cluster.articles]
-  );
+  // Unread first, then read (kept visible but dimmed — see below).
+  const ordered = useMemo(() => {
+    const unread = cluster.articles.filter((a) => !a.read);
+    const read = cluster.articles.filter((a) => a.read);
+    return [...unread, ...read];
+  }, [cluster.articles]);
 
   const presentModes = useMemo(() => {
     const set = new Set<Mode>();
-    for (const a of unread) if (a.mode) set.add(a.mode);
+    for (const a of cluster.articles) if (a.mode) set.add(a.mode);
     return MODE_ORDER.filter((m) => set.has(m));
-  }, [unread]);
+  }, [cluster.articles]);
 
   const [filter, setFilter] = useState<Filter>("all");
-  const filtered = filter === "all" ? unread : unread.filter((a) => a.mode === filter);
+  const filtered = filter === "all" ? ordered : ordered.filter((a) => a.mode === filter);
 
-  if (unread.length === 0) return null;
+  if (cluster.articles.length === 0) return null;
+
+  const unreadCount = cluster.articles.filter((a) => !a.read).length;
 
   return (
     <section className="space-y-3">
@@ -33,6 +37,9 @@ export default function ClusterSection({ cluster }: { cluster: Cluster }) {
         {cluster.description && (
           <p className="text-sm text-muted mt-1">{cluster.description}</p>
         )}
+        <p className="text-xs text-muted mt-1">
+          {unreadCount} unread · {cluster.articles.length} total
+        </p>
         {presentModes.length > 0 && (
           <div className="mt-2 flex flex-wrap gap-1.5 text-xs">
             <FilterButton active={filter === "all"} onClick={() => setFilter("all")}>
@@ -48,18 +55,27 @@ export default function ClusterSection({ cluster }: { cluster: Cluster }) {
       </div>
       <ul className="divide-y divide-black/5 dark:divide-white/5 border-y border-black/5 dark:border-white/5">
         {filtered.map((a) => (
-          <li key={a.slug} className="py-3">
+          <li key={a.slug} className={"py-3 " + (a.read ? "opacity-45" : "")}>
             <div className="flex items-baseline gap-3">
               <ModeBadge mode={a.mode} />
-              <Link
-                href={a.content ? `/article/${a.slug}/` : a.url}
-                className="font-medium hover:text-accent"
-              >
-                {a.title}
-              </Link>
+              {a.content ? (
+                <Link href={`/article/${a.slug}/`} className="font-medium hover:text-accent">
+                  {a.title}
+                </Link>
+              ) : (
+                <span className="font-medium">{a.title}</span>
+              )}
               <span className="text-xs text-muted shrink-0">{a.domain}</span>
+              {a.read && <span className="text-xs text-muted shrink-0">· read</span>}
               {!a.content && (
-                <span className="text-xs text-amber-600 shrink-0">external</span>
+                <a
+                  href={a.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="ml-auto shrink-0 rounded border border-black/15 px-2 py-0.5 text-xs text-accent hover:bg-accent hover:text-paper dark:border-white/15"
+                >
+                  Open original ↗
+                </a>
               )}
             </div>
             {a.description && (
@@ -88,8 +104,8 @@ function FilterButton({
       className={
         "rounded px-2 py-0.5 transition-colors " +
         (active
-          ? "bg-foreground text-background"
-          : "bg-black/5 text-muted hover:text-foreground dark:bg-white/10")
+          ? "bg-accent text-paper"
+          : "bg-black/5 text-muted hover:text-ink dark:bg-white/10 dark:hover:text-paper")
       }
     >
       {children}
