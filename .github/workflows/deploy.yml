@@ -1,0 +1,31 @@
+name: deploy site (trigger vault rebuild)
+
+# LibStack's PWA/site is built + deployed by the knowledge repo's
+# rebuild-libstack.yml (it needs the vault checked out for build:content).
+# This workflow makes a LibStack push to main fan out into that rebuild so
+# front-end changes go live automatically — same one-way coupling, just the
+# reverse direction. Worker-only and docs-only pushes are skipped (the worker
+# has its own deploy-worker.yml).
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "workers/**"
+      - "**.md"
+      - ".github/workflows/deploy-worker.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: trigger-vault-rebuild
+  cancel-in-progress: true
+
+jobs:
+  trigger:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fire knowledge repo rebuild-libstack
+        env:
+          # Fine-grained PAT, Actions: Read and write on sameerhimati/knowledge only.
+          GH_TOKEN: ${{ secrets.KNOWLEDGE_DISPATCH_PAT }}
+        run: gh workflow run rebuild-libstack.yml --repo sameerhimati/knowledge --ref main
