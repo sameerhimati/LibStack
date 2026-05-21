@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { sendOrQueue } from "@/lib/vault-bridge";
-import { pendingCount, randomId, removePendingByClientId } from "@/lib/write-queue";
+import { dropOrphanHighlights, pendingCount, randomId, removePendingByClientId } from "@/lib/write-queue";
 import { markReadLocally, unmarkReadLocally } from "@/lib/read-state";
 
 type SaveState = "idle" | "saving" | "saved" | "queued" | "error";
@@ -110,22 +110,23 @@ export default function ArticleActions({
     return () => window.removeEventListener("libstack:sync", onSync);
   }, []);
 
-  // Clean up any ghost marks left from prior sessions (whitespace-only marks
-  // produce tall thin highlight bars in the gaps between block elements).
-  // Also drop their queue entries so they don't sync to the vault later.
+  // Clean up two kinds of cruft from before the whitespace guards landed:
+  //   - ghost marks in the DOM (this session only — marks aren't persisted)
+  //   - orphan queue entries in IndexedDB (persistent, sync to the vault
+  //     once the worker endpoint ships if we don't drop them now)
   useEffect(() => {
     const prose = document.querySelector(".prose");
-    if (!prose) return;
-    const ghosts = Array.from(
-      prose.querySelectorAll("mark.libstack-highlight"),
-    ).filter((m) => (m.textContent ?? "").trim().length === 0) as HTMLElement[];
-    if (ghosts.length === 0) return;
-    for (const g of ghosts) {
-      const id = g.dataset.libstackId;
-      if (id) void removePendingByClientId(id);
-      unwrapMark(g);
+    if (prose) {
+      const ghosts = Array.from(
+        prose.querySelectorAll("mark.libstack-highlight"),
+      ).filter((m) => (m.textContent ?? "").trim().length === 0) as HTMLElement[];
+      for (const g of ghosts) {
+        const id = g.dataset.libstackId;
+        if (id) void removePendingByClientId(id);
+        unwrapMark(g);
+      }
     }
-    void pendingCount().then(setPending);
+    void dropOrphanHighlights().then(() => pendingCount().then(setPending));
   }, []);
 
   // Track .prose selection — only mutate state when inside .prose so the value

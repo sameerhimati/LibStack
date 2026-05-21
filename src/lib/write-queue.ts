@@ -160,3 +160,22 @@ export async function removePendingByClientId(clientId: string): Promise<number>
   for (const e of matching) await removePending(e.id);
   return matching.length;
 }
+
+/**
+ * Drop pending highlight entries whose quote is whitespace-only. One-shot
+ * cleanup for orphans created before the openCapture/applyMark whitespace
+ * guards landed — without this they'd sync to the vault as garbage entries
+ * once the worker endpoint ships.
+ */
+export async function dropOrphanHighlights(): Promise<number> {
+  if (!hasIDB()) return 0;
+  const all = await listPending();
+  const orphans = all.filter((e) => {
+    if (e.endpoint !== "/api/highlights") return false;
+    const p = e.payload as { quote?: unknown } | null;
+    const q = typeof p?.quote === "string" ? p.quote : "";
+    return q.trim().length === 0;
+  });
+  for (const e of orphans) await removePending(e.id);
+  return orphans.length;
+}
