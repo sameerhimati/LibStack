@@ -31,7 +31,7 @@ export default function ArticlePage({ params }: { params: { slug: string } }) {
         <div className="space-y-2">
           <div className="flex items-baseline gap-3">
             <ModeBadge mode={article.mode} />
-            <h1 className="text-3xl font-semibold tracking-tight font-serif">{article.title}</h1>
+            <h1 className="text-3xl font-semibold tracking-tight font-serif break-words">{article.title}</h1>
           </div>
           <div className="text-sm text-muted">
             {article.byline && <span>{article.byline} · </span>}

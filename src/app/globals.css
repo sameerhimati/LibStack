@@ -21,11 +21,16 @@ html, body {
 .prose { max-width: 68ch; }
 .prose img { border-radius: 0.5rem; }
 
-/* Code blocks: scroll horizontally instead of truncating, preserve whitespace. */
+/* Code blocks: scroll horizontally instead of truncating, preserve whitespace.
+   Tighter font size on mobile so more code fits before scrolling kicks in. */
 .prose pre {
   max-width: 100%;
   overflow-x: auto;
   white-space: pre;
+  font-size: 0.875rem;
+}
+@media (min-width: 768px) {
+  .prose pre { font-size: 1rem; }
 }
 
 /* KaTeX display math can overflow on narrow screens — let it scroll horizontally. */
@@ -33,6 +38,28 @@ html, body {
   overflow-x: auto;
   overflow-y: hidden;
   padding: 0.25rem 0;
+}
+
+/* Scroll affordance: subtle right-edge fade hints at horizontal overflow.
+   background-attachment: local pins the "cover" rectangle to the scroll
+   position so the shadow disappears once the user reaches the far right. */
+.prose pre,
+.katex-display {
+  background-image:
+    linear-gradient(to right, theme(colors.paper), theme(colors.paper)),
+    linear-gradient(to right, rgba(251, 250, 247, 0), rgba(251, 250, 247, 0.95));
+  background-position: right center, right center;
+  background-repeat: no-repeat;
+  background-size: 2rem 100%, 2rem 100%;
+  background-attachment: local, scroll;
+}
+@media (prefers-color-scheme: dark) {
+  .prose pre,
+  .katex-display {
+    background-image:
+      linear-gradient(to right, #15140f, #15140f),
+      linear-gradient(to right, rgba(21, 20, 15, 0), rgba(21, 20, 15, 0.95));
+  }
 }
 
 a { text-underline-offset: 2px; }
