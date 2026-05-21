@@ -1,100 +1,98 @@
 # LibStack Roadmap
 
-The compounding goal: as the reading-queue and vault grow, LibStack scales with zero extra effort. Each phase compounds.
+LibStack is a personal reading viewer for Sameer's knowledge vault.
+
+**Stance:** single-user, my-tool-for-me. The vault is the source of truth; LibStack is a derived view that compounds with the vault's other tooling. Productization (BYO-vault SaaS, OSS template, vault-bridge-as-primitive) is an explicit *parked* thread — see auto-memory `project_libstack_product_thread.md`. Revisit post-MVP.
+
+The compounding goal: as the reading-queue and vault grow, LibStack scales with zero extra effort.
 
 ---
 
-## Phase 0 — Trip bundle MVP (now, before 2026-05-09)
+## Shipped — historical anchor
 
-Goal: Sameer takes the iPad on a 7-day road trip with no internet and reads 10+ articles from the queue.
+Kept for context. Phases closed; everything below is live at `reading.itamih.com`.
 
-- [x] Project scaffolded
-- [x] Queue parser (handles `## cluster`, `### tier`, `- [ ] [title](url) — desc`)
-- [x] Fetcher with Readability extraction + cache
-- [x] Cluster list page
-- [x] Article reader page
-- [x] Static export (`output: "export"`)
-- [ ] First successful end-to-end build with real queue data
-- [ ] Test bundle on iPad (open `out/index.html` in Safari, verify offline)
+### Phase 0 — Trip bundle MVP (closed early May 2026)
 
-Acceptance: AirDrop `out/` to iPad, open offline, read at least 5 fetched articles cleanly.
+Goal: AirDrop offline-ready reading bundle to iPad for a 7-day road trip.
 
----
+Project scaffolded · queue parser (`## CLUSTER`, mode tiers, `- [ ] [title](url) — desc`) · Readability fetcher + cache · cluster list + article reader · static export (`output: "export"`) · end-to-end build validated against real queue · iPad-tested offline.
 
-## Phase 1 — PWA + deploy (post-trip, 2026-05-17 → 2026-05-22)
+### Phase 1 — PWA + deploy (closed 2026-05-08, 9 days early)
 
-Goal: `reading.itamih.com` lives, updates automatically when the vault repo is pushed.
+Goal: `reading.itamih.com` lives and updates automatically when the vault repo is pushed.
 
-- [ ] PWA manifest + service worker (cache article JSON + pages for offline)
-- [ ] Deploy decision: Cloudflare Pages vs Vercel vs GitHub Pages on `itamih.github.io/reading`
-- [ ] DNS for `reading.itamih.com` (if subdomain chosen)
-- [ ] GitHub Action in the knowledge repo: on push to `inbox/reading-queue.md`, trigger LibStack rebuild
-- [ ] CI build runs `bun run build` and deploys `out/`
-- [ ] Verify offline behavior on iPhone Safari (PWA install prompt, cache survives airplane mode)
+PWA manifest + SW (offline article cache) · Cloudflare Pages deploy · DNS for `reading.itamih.com` · GitHub Action chain (vault push → `rebuild-libstack.yml` → site deploy) · iPhone PWA offline-verified · KaTeX shipped for math-heavy articles.
 
-Acceptance: push a new article URL to the vault, see it appear on `reading.itamih.com` within 5 minutes, read it offline on the phone.
+### Phase 2 v2 — Vault round-trip (closed 2026-05-18, UX polish 2026-05-20)
 
----
+Goal: phone-side reading work writes back to the vault via a Cloudflare Worker, scoped to bounded write types with shared-secret auth and an audit trail. Full spec in `PLAN-vault-bridge.md`.
 
-## Phase 2 v2 — Vault round-trip (this week, 2026-05-10 → 2026-05-16, vacation async)
+**Worker + PWA (2026-05-18):**
+- [x] CF Worker `vault-bridge` — `/api/notes` + `/api/mark-read` · shared-secret auth · GitHub API commits via plain `fetch` · URL normalization for mark-read matching · CORS
+- [x] PWA UI — notes textarea (5s autosave, IndexedDB write-queue with reconnect retry), mark-read button, Settings for shared-secret entry
+- [x] `.github/workflows/deploy-worker.yml` — push to `workers/vault-bridge/**` → `bunx wrangler deploy`
+- [x] Autodeploy chain — LibStack push → vault `rebuild-libstack.yml` → site deploy (verified)
+- [x] Hygiene invariant — scoped contracts, source-tagged (`Source: libstack`), auditable; vault stays SoT
 
-Goal: LibStack stops being read-only. Phone-side reading work (notes, mark-read) writes back to the vault via a Cloudflare Worker, scoped to two write types in v1. See `PLAN-vault-bridge.md` for the full execution spec.
+**UX polish pass (2026-05-20):**
+- [x] localStorage overlay so mark-read reflects instantly on cluster index (`ddd8947`)
+- [x] Read-row resting state — ✓ chip, strikethrough title, dropped literal "· read" text
+- [x] Notes UX rebuilt — bottom-right pill + 85vh bottom sheet with existing vault notes rendered inline; auto-expanding textarea; visible save-status (`018fad2`)
+- [x] Existing-notes build wiring — `scripts/build-content.ts` reads `$VAULT/inbox/raw/captures/notes/<slug>.md` and renders a minimal markdown subset to HTML at build time
+- [x] Home page — collapsible clusters w/ per-cluster localStorage persistence + Resume/Up next surface (`82abb2c`)
 
-- [x] CF Worker `vault-bridge` (`workers/vault-bridge/`) — two endpoints: `/api/notes`, `/api/mark-read`. Shared-secret auth (stored in IndexedDB on the client), GitHub API commits to `sameerhimati/knowledge` via plain `fetch` (not octokit — fewer deps, no Workers-compat risk). URL normalization for mark-read matching. CORS added (cross-origin PWA→worker correctness).
-- [x] PWA UI — notes textarea (5s autosave, IndexedDB write queue with retry on reconnect), mark-read button, Settings component for shared-secret entry.
-- [ ] Highlights deferred to v1.1 (proper iOS Safari selection UX design).
-- [x] `.github/workflows/deploy-worker.yml` — push to `workers/vault-bridge/**` → `bunx wrangler deploy`.
-- [x] Update `session-handoff.md` invariant — hygiene-based (scoped contracts, source-tagged, auditable; vault stays SoT).
-
-> **Code complete 2026-05-18, deploy/phone-test gated.** All code typechecks + `next build` green (24 static pages). Remaining: CF dashboard worker + secrets (`GITHUB_PAT`, `SHARED_SECRET`), `CLOUDFLARE_*` secrets on the LibStack repo, iOS phone test pass.
-- [ ] Companion: nightly `/compile` cron in the knowledge vault distills captures into atomic notes (separate plan, redesigned as iMessage-interactive; lives in vault repo, not here).
-
-Acceptance: open LibStack on phone, take a note + mark-read one article, see commits in vault repo within 5s. End-to-end loop: phone note (in flight, no network) → IndexedDB queue → WiFi reconnect → vault commit → next morning `/compile` distills.
-
-**Explicit non-goals:** highlights in v1 (deferred), archive state, GBrain integration (rejected).
+**Dropped from v1, deferred to v1.1:** highlights (iOS Safari selection UX needed design — see Active below).
 
 ---
 
-## Phase 2 — Vault integration (June+, fits the deliberate June "no-build" sprint as OS-layer work)
+## Active
 
-Goal: LibStack becomes the reading + thinking surface, not just a reader. Compounds the vault's existing reading-notes/ pattern.
+### Phase 2 v2.1 — Highlights + polish closeout
 
-- [ ] Read `research/reading-notes/<cluster>.md` and surface entries inline next to each article
-- [ ] Resolve `[[wikilinks]]` in reading-notes to vault notes (cross-link to `ideas/`, `projects/<name>/`)
-- [ ] Search: full-text across articles + reading-notes + atomic notes
-- [ ] Reading progress (localStorage MVP, then commit-as-state)
-- [ ] Highlights: select text → save as a commit to the vault as a note in `research/reading-notes/`
-- [ ] NotebookLM audio link surfacing (when present)
+Goal: ship the third vault write type, finish the polish list, validate the redesigned mobile experience.
 
-Acceptance: read an article, highlight a line, watch it appear as a note in the vault git log within seconds.
+- [ ] **Phone-validate the 2026-05-20 UX changes** — 15+ min of real use on iPhone before piling on. Watch: notes pill prominence/reach, sheet textarea on iOS keyboard, cluster-collapse feel after a day, Resume card signal-vs-noise.
+- [ ] **Highlights v1.1** — spike iOS Safari selection capture on a real phone first; decide vault write contract in `PLAN-vault-bridge.md` *before* coding (append under `## Highlights` in existing notes file vs sibling file); add `POST /api/highlights` mirroring `/api/notes`, reusing IndexedDB write-queue path. Touch points: `src/components/ArticleActions.tsx`, `workers/vault-bridge/src/index.ts`.
+- [ ] **Sort / filter** — beyond mode pills: sort by added-recency or read-status; quick "unread only" toggle
+- [ ] **Image localization** — cache article images locally so offline reading actually has images
+- [ ] **Content-render polish** — Shiki for code, richer markdown rendering, type controls (font size, line height, theme)
+- [ ] **Video tab** — surface video-embed articles as a separate view
+- [ ] **OG tags** — proper per-article meta tags for link-preview correctness
+- [ ] **Companion: nightly `/compile` cron in the knowledge vault** — distills captures into atomic notes; lives in vault, not here
+
+### Phase 2 — Vault integration (bleeds into above; reshape as we go)
+
+Goal: LibStack composes more deeply with vault data.
+
+- [ ] **NotebookLM thread (expand)** — currently scoped as "audio link surfacing." Worth its own design pass: auto-generate NotebookLM notebooks per cluster, link audio inline with articles, surface in reader. Flagged for thinking, not built.
+- [ ] **Reading-notes inline** — surface `research/reading-notes/<cluster>.md` entries beside each article in the cluster (separate from the per-article notes already loaded by Phase 2 v2)
+- [ ] **Reading progress (commit-as-state)** — promote the localStorage MVP (`read-state.ts`, `nav-state.ts`) to commit-backed state once it's clear what's worth persisting beyond the device
+
+**Dropped:**
+- ~~`[[wikilinks]]` resolution~~ — Obsidian already does this; out of scope
+- ~~Search~~ — shipped (`src/components/Search.tsx` + Fuse)
+- ~~Reading progress (localStorage MVP)~~ — shipped 2026-05-20
 
 ---
 
-## Phase 3 — Compounding edges (later, opportunistic)
+## Phase 3 — Compounding edges (opportunistic, not committed)
 
-Not committed to. Listed so they don't get forgotten.
+Speculative live-render features. Listed so they don't get forgotten; no commitment to building any.
 
-### Live render features
-- [ ] **"This Week" surface** — read-only home view that loads `daily/W##.md` and surfaces the lint-generated todos + ≤3 active reads + 1 compile target. Phone-first.
-- [ ] AI summary per article (Claude API, cached)
-- [ ] Cross-article wikigraph (article A cites article B, render as graph)
-- [ ] Reading streaks / cadence visualization
-- [ ] Multi-vault support (if Sameer ever has separate work/personal vaults)
+- [ ] **"This Week" surface** — read-only home view loading `daily/W##.md` (lint-generated todos + ≤3 active reads + 1 compile target). Phone-first.
+- [ ] **AI summary per article** — Claude API, cached at build time
+- [ ] **Cross-article wikigraph** — citation graph rendering
+- [ ] **Reading streaks / cadence visualization**
+- [ ] **Multi-vault support** — only if work/personal ever split
 
-### June exploration threads (Mac mini ambient agent era)
-
-Not LibStack code per se — LibStack is the render surface, an ambient agent on the Mac mini does the capture. Documented here so the loop is visible.
-
-- [ ] **iMessage → reading-queue** — forward a link to a dedicated number/contact, ambient agent on Mac mini parses, commits to `inbox/reading-queue.md`. Existing rebuild workflow lights it up in LibStack within ~50s. Replaces the generic "paste a URL on phone" idea with a concrete pipeline. (Original generic item: paste a URL on phone, trigger fetch + commit to `inbox/reading-queue.md`.)
-- [ ] **Hermes Agent exploration** — single-channel ambient runner for one repeatable task (TBD: maybe nightly `/compile`, maybe weekly reading triage). Skill-accumulation loop. Single use case to start, no skill marketplace, no third-party skills. Decision point in June.
-- [ ] **OpenClaw on Mac mini** — gateway-first runtime, bound to loopback + Tailscale Serve. Single channel (iMessage) and single use case (capture-to-queue) to start. Defer all multi-channel/multi-skill work until after the single channel proves itself.
-
-**Constraints (carry forward from research):** GBrain rejected. No third-party skills from ClawHub (12% malware rate). No `hermes claw cleanup` ever. No public exposure of the Gateway port — loopback + Tailscale only.
+**Moved out of LibStack's roadmap:** the Mac mini / iMessage-capture / Hermes / OpenClaw threads. LibStack is the *render surface*; the capture pipeline (iMessage → ambient agent → vault `inbox/reading-queue.md`) is vault infrastructure and belongs in the vault's own dashboard. LibStack passively picks up new queue entries through its existing parser — zero LibStack code involved.
 
 ---
 
 ## Out of scope
 
-- Authentication — vault is private but LibStack render is public. If something is sensitive, it doesn't go in `inbox/reading-queue.md`.
-- Comments / social — not the point of this tool.
-- Re-implementing Obsidian — LibStack is reading-only; editing happens in Obsidian or the vault directly.
+- **Authentication** — vault is private; LibStack render is public. If something is sensitive, it doesn't go in `inbox/reading-queue.md`.
+- **Comments / social** — not the point.
+- **Re-implementing Obsidian** — LibStack is reading + light annotation; structural editing happens in Obsidian or directly in the vault repo.
+- **Productization** — parked thread. Stay single-user until/unless explicitly revisited.
