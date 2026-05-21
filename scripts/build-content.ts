@@ -386,8 +386,6 @@ async function main() {
   console.log(`Parsing ${QUEUE}…`);
   const clusters = parseQueue(readFileSync(QUEUE, "utf8"));
   const total = clusters.reduce((n, c) => n + c.articles.length, 0);
-  const toFetch = clusters.flatMap((c) => c.articles).filter((a) => !a.read);
-  console.log(`Found ${total} entries across ${clusters.length} clusters · ${toFetch.length} unread to fetch`);
 
   let cache: Record<string, Article> = {};
   if (existsSync(OUT)) {
@@ -398,25 +396,40 @@ async function main() {
     } catch {}
   }
 
-  let done = 0; let okCount = 0; let failCount = 0; let skipCount = 0;
+  // Hydrate cached content onto every article regardless of read state — read
+  // articles need to stay readable in-app, otherwise marking-read is a one-way
+  // dead end for any URL that wasn't fetched while it was unread.
+  let hydrated = 0;
+  for (const c of clusters) {
+    for (const a of c.articles) {
+      const cached = cache[a.url];
+      if (cached?.content) {
+        a.content = renderMath(cached.content, a.url);
+        a.byline = cached.byline;
+        a.excerpt = cached.excerpt;
+        a.fetchedAt = cached.fetchedAt;
+        hydrated++;
+      }
+    }
+  }
+
+  // Fetch anything still missing content — read state no longer gates this.
+  // X URLs short-circuit inside extractArticle and stay link-only.
+  const toFetch = clusters.flatMap((c) => c.articles).filter((a) => !a.content);
+  console.log(`Found ${total} entries across ${clusters.length} clusters · ${hydrated} hydrated from cache · ${toFetch.length} to fetch`);
+
+  let done = 0; let okCount = 0; let failCount = 0;
   const queue = [...toFetch];
 
   async function worker() {
     while (queue.length) {
       const a = queue.shift(); if (!a) break;
-      const cached = cache[a.url];
-      if (cached?.content) {
-        a.content = renderMath(cached.content, a.url);
-        a.byline = cached.byline; a.excerpt = cached.excerpt;
-        a.fetchedAt = cached.fetchedAt; skipCount++;
-      } else {
-        const r = await extractArticle(a.url);
-        Object.assign(a, r);
-        if (a.content) okCount++; else failCount++;
-      }
+      const r = await extractArticle(a.url);
+      Object.assign(a, r);
+      if (a.content) okCount++; else failCount++;
       done++;
       if (done % 5 === 0 || done === toFetch.length) {
-        console.log(`  ${done}/${toFetch.length}  ok=${okCount} fail=${failCount} cached=${skipCount}`);
+        console.log(`  ${done}/${toFetch.length}  ok=${okCount} fail=${failCount}`);
       }
     }
   }
@@ -443,7 +456,7 @@ async function main() {
   const library = { generatedAt: new Date().toISOString(), vaultPath: VAULT, clusters };
   writeFileSync(OUT, JSON.stringify(library, null, 2));
   console.log(`\nWrote ${OUT}`);
-  console.log(`Summary: ${okCount} fetched, ${skipCount} cached, ${failCount} failed (X/auth links open externally on iPad)`);
+  console.log(`Summary: ${okCount} fetched, ${hydrated} cached, ${failCount} failed (X/auth links open externally on iPad)`);
   console.log(`Math: ${mathRendered} rendered, ${mathFailed} failed`);
 
   // Search index: flat list of unread articles with a short snippet for client-side fuse.js.
