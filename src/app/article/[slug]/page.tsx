@@ -25,6 +25,7 @@ export default function ArticlePage({ params }: { params: { slug: string } }) {
           title={article.title}
           url={article.url}
           mode={article.mode}
+          initialRead={article.read}
           existingNotes={article.existingNotes}
           existingNotesHtml={article.existingNotesHtml}
         />
