@@ -1,21 +1,34 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { Cluster, Mode } from "@/lib/types";
 import ModeBadge from "./ModeBadge";
+import { reconcileLocalReadSet, useLocalReadSet } from "@/lib/read-state";
 
 type Filter = "all" | Mode;
 
 const MODE_ORDER: Mode[] = ["Q", "A", "H"];
 
 export default function ClusterSection({ cluster }: { cluster: Cluster }) {
-  // Unread first, then read (kept visible but dimmed — see below).
-  const ordered = useMemo(() => {
-    const unread = cluster.articles.filter((a) => !a.read);
-    const read = cluster.articles.filter((a) => a.read);
-    return [...unread, ...read];
+  const localRead = useLocalReadSet();
+  const isRead = (a: { slug: string; read?: boolean }) =>
+    Boolean(a.read) || localRead.has(a.slug);
+
+  // Once the build sees an article as read, drop it from the local overlay so
+  // the localStorage set stays bounded.
+  useEffect(() => {
+    const serverRead = cluster.articles.filter((a) => a.read).map((a) => a.slug);
+    if (serverRead.length) reconcileLocalReadSet(serverRead);
   }, [cluster.articles]);
+
+  // Unread first, then read (kept visible but dimmed).
+  const ordered = useMemo(() => {
+    const unread = cluster.articles.filter((a) => !isRead(a));
+    const read = cluster.articles.filter((a) => isRead(a));
+    return [...unread, ...read];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cluster.articles, localRead]);
 
   const presentModes = useMemo(() => {
     const set = new Set<Mode>();
@@ -28,7 +41,7 @@ export default function ClusterSection({ cluster }: { cluster: Cluster }) {
 
   if (cluster.articles.length === 0) return null;
 
-  const unreadCount = cluster.articles.filter((a) => !a.read).length;
+  const unreadCount = cluster.articles.filter((a) => !isRead(a)).length;
 
   return (
     <section className="space-y-3">
@@ -54,35 +67,51 @@ export default function ClusterSection({ cluster }: { cluster: Cluster }) {
         )}
       </div>
       <ul className="divide-y divide-black/5 dark:divide-white/5 border-y border-black/5 dark:border-white/5">
-        {filtered.map((a) => (
-          <li key={a.slug} className={"py-3 " + (a.read ? "opacity-45" : "")}>
-            <div className="flex items-baseline gap-3">
-              <ModeBadge mode={a.mode} />
-              {a.content ? (
-                <Link href={`/article/${a.slug}/`} className="font-medium hover:text-accent">
-                  {a.title}
-                </Link>
-              ) : (
-                <span className="font-medium">{a.title}</span>
+        {filtered.map((a) => {
+          const read = isRead(a);
+          return (
+            <li key={a.slug} className={"py-3 " + (read ? "opacity-50" : "")}>
+              <div className="flex items-baseline gap-3">
+                {read ? (
+                  <span
+                    aria-label="read"
+                    className="inline-flex h-4 w-4 shrink-0 items-center justify-center self-center rounded-full bg-accent/15 text-[10px] leading-none text-accent"
+                  >
+                    ✓
+                  </span>
+                ) : (
+                  <ModeBadge mode={a.mode} />
+                )}
+                {a.content ? (
+                  <Link
+                    href={`/article/${a.slug}/`}
+                    className={"font-medium hover:text-accent " + (read ? "line-through decoration-1 decoration-muted/60" : "")}
+                  >
+                    {a.title}
+                  </Link>
+                ) : (
+                  <span className={"font-medium " + (read ? "line-through decoration-1 decoration-muted/60" : "")}>
+                    {a.title}
+                  </span>
+                )}
+                <span className="text-xs text-muted shrink-0">{a.domain}</span>
+                {!a.content && !read && (
+                  <a
+                    href={a.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="ml-auto shrink-0 rounded border border-black/15 px-2 py-0.5 text-xs text-accent hover:bg-accent hover:text-paper dark:border-white/15"
+                  >
+                    Open original ↗
+                  </a>
+                )}
+              </div>
+              {a.description && !read && (
+                <p className="text-sm text-muted mt-1">{a.description}</p>
               )}
-              <span className="text-xs text-muted shrink-0">{a.domain}</span>
-              {a.read && <span className="text-xs text-muted shrink-0">· read</span>}
-              {!a.content && (
-                <a
-                  href={a.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="ml-auto shrink-0 rounded border border-black/15 px-2 py-0.5 text-xs text-accent hover:bg-accent hover:text-paper dark:border-white/15"
-                >
-                  Open original ↗
-                </a>
-              )}
-            </div>
-            {a.description && (
-              <p className="text-sm text-muted mt-1">{a.description}</p>
-            )}
-          </li>
-        ))}
+            </li>
+          );
+        })}
       </ul>
     </section>
   );

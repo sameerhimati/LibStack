@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { sendOrQueue } from "@/lib/vault-bridge";
 import { pendingCount } from "@/lib/write-queue";
+import { markReadLocally, unmarkReadLocally } from "@/lib/read-state";
 
 type SaveState = "idle" | "saving" | "saved" | "queued" | "error";
 
@@ -58,12 +59,14 @@ export default function ArticleActions({
 
   async function markRead() {
     setRead(true); // optimistic
+    markReadLocally(slug); // cluster index reflects immediately
     setReadMsg(null);
     const r = await sendOrQueue("/api/mark-read", { url });
     if (r.status === "ok") setReadMsg("marked read — drops off the feed shortly");
     else if (r.status === "queued") setReadMsg("offline — will sync on reconnect");
     else {
       setRead(false); // revert: the queue line didn't match (404/409)
+      unmarkReadLocally(slug);
       setReadMsg(`couldn't mark read: ${r.message}`);
     }
     void pendingCount().then(setPending);
