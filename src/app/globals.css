@@ -63,3 +63,20 @@ html, body {
 }
 
 a { text-underline-offset: 2px; }
+
+/* Highlight marks in the article body. Accent-tinted background, no full
+   yellow-block (that's the typography plugin default). Inherits color so
+   linked text inside the mark stays legible. */
+.prose mark.libstack-highlight {
+  background: rgba(212, 165, 116, 0.22);
+  color: inherit;
+  padding: 0 0.1em;
+  border-radius: 0.15rem;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+@media (prefers-color-scheme: dark) {
+  .prose mark.libstack-highlight {
+    background: rgba(212, 165, 116, 0.28);
+  }
+}

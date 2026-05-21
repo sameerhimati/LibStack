@@ -33,6 +33,20 @@ function hasIDB(): boolean {
   return typeof indexedDB !== "undefined";
 }
 
+// crypto.randomUUID() is gated behind secure-context (HTTPS or localhost). On
+// a LAN-IP dev server over plain HTTP it throws, which silently breaks the
+// queue. This fallback uses non-cryptographic random — fine for queue IDs.
+function randomId(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    try {
+      return crypto.randomUUID();
+    } catch {
+      /* secure-context gate failed — fall through */
+    }
+  }
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
 function openDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     if (!hasIDB()) return reject(new Error("IndexedDB unavailable"));
@@ -85,7 +99,7 @@ export async function setSetting(key: string, value: string): Promise<void> {
 
 export async function enqueue(endpoint: Endpoint, payload: unknown): Promise<QueueEntry> {
   const entry: QueueEntry = {
-    id: crypto.randomUUID(),
+    id: randomId(),
     endpoint,
     payload,
     attempts: 0,

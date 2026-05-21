@@ -7,18 +7,25 @@ import { markReadLocally, unmarkReadLocally } from "@/lib/read-state";
 
 type SaveState = "idle" | "saving" | "saved" | "queued" | "error";
 
-// Capture the current selection text only when it lives inside a .prose body —
-// avoids overwriting the captured value if the user later selects something
-// inside the sheet (a label, a comment textarea, etc).
-function selectionInsideProse(): string {
-  if (typeof window === "undefined") return "";
-  const sel = window.getSelection();
-  if (!sel || sel.isCollapsed || sel.rangeCount === 0) return "";
-  const node = sel.anchorNode;
-  if (!node) return "";
-  const el = node.nodeType === Node.ELEMENT_NODE ? (node as Element) : node.parentElement;
-  if (!el?.closest(".prose")) return "";
-  return sel.toString().trim();
+// Wrap a Range with a <mark>. Fast path: surroundContents (single text node).
+// Multi-node ranges throw — fall back to extract/insert which handles crossing
+// inline elements like <a> or <em> inside the quote.
+function applyMark(range: Range): boolean {
+  const mark = document.createElement("mark");
+  mark.className = "libstack-highlight";
+  try {
+    range.surroundContents(mark);
+    return true;
+  } catch {
+    try {
+      const fragment = range.extractContents();
+      mark.appendChild(fragment);
+      range.insertNode(mark);
+      return true;
+    } catch {
+      return false;
+    }
+  }
 }
 
 export default function ArticleActions({
@@ -51,6 +58,11 @@ export default function ArticleActions({
   const [captureSave, setCaptureSave] = useState<SaveState>("idle");
   const commentRef = useRef<HTMLTextAreaElement>(null);
 
+  // Live Range mirror, updated on each selectionchange. We clone on capture
+  // so the modal flow doesn't depend on the live selection surviving.
+  const selectionRangeRef = useRef<Range | null>(null);
+  const captureRangeRef = useRef<Range | null>(null);
+
   useEffect(() => {
     void pendingCount().then(setPending);
     const onSync = () => void pendingCount().then(setPending);
@@ -62,11 +74,21 @@ export default function ArticleActions({
   // survives opening the sheet (where another selection may briefly happen).
   useEffect(() => {
     const onSel = () => {
-      const txt = selectionInsideProse();
-      if (txt) setSelectionText(txt);
-      // When the selection collapses inside .prose, clear; outside .prose we
-      // leave the prior value intact (preserves the user's capture intent).
-      else if (document.activeElement?.closest(".prose")) setSelectionText("");
+      const sel = window.getSelection();
+      if (!sel || sel.isCollapsed || sel.rangeCount === 0) {
+        if (document.activeElement?.closest(".prose")) {
+          setSelectionText("");
+          selectionRangeRef.current = null;
+        }
+        return;
+      }
+      const node = sel.anchorNode;
+      const el = node?.nodeType === Node.ELEMENT_NODE ? (node as Element) : node?.parentElement;
+      if (!el?.closest(".prose")) return;
+      const txt = sel.toString().trim();
+      if (!txt) return;
+      setSelectionText(txt);
+      selectionRangeRef.current = sel.getRangeAt(0).cloneRange();
     };
     document.addEventListener("selectionchange", onSel);
     return () => document.removeEventListener("selectionchange", onSel);
@@ -120,32 +142,44 @@ export default function ArticleActions({
 
   function openCapture() {
     if (!selectionText) return;
+    captureRangeRef.current = selectionRangeRef.current?.cloneRange() ?? null;
     setCaptureQuote(selectionText);
     setCaptureComment("");
     setCaptureSave("idle");
     setCaptureOpen(true);
     setSheetOpen(false);
-    // Defer focus so the modal is mounted before we focus its textarea.
     setTimeout(() => commentRef.current?.focus(), 30);
   }
 
   async function saveCapture() {
     if (!captureQuote.trim()) return;
     setCaptureSave("saving");
-    const r = await sendOrQueue("/api/highlights", {
-      slug,
-      title,
-      url,
-      mode,
-      quote: captureQuote,
-      comment: captureComment.trim() || undefined,
-    });
-    if (r.status === "ok") setCaptureSave("saved");
-    else if (r.status === "queued") setCaptureSave("queued");
-    else setCaptureSave("error");
-    void pendingCount().then(setPending);
-    if (r.status === "ok" || r.status === "queued") {
-      setTimeout(() => setCaptureOpen(false), 500);
+    try {
+      const r = await sendOrQueue("/api/highlights", {
+        slug,
+        title,
+        url,
+        mode,
+        quote: captureQuote,
+        comment: captureComment.trim() || undefined,
+      });
+      if (r.status === "ok") setCaptureSave("saved");
+      else if (r.status === "queued") setCaptureSave("queued");
+      else setCaptureSave("error");
+      void pendingCount().then(setPending);
+      if (r.status === "ok" || r.status === "queued") {
+        if (captureRangeRef.current) {
+          applyMark(captureRangeRef.current);
+          window.getSelection()?.removeAllRanges();
+          captureRangeRef.current = null;
+        }
+        setSelectionText("");
+        selectionRangeRef.current = null;
+        setTimeout(() => setCaptureOpen(false), 500);
+      }
+    } catch (e) {
+      console.error("highlight save failed", e);
+      setCaptureSave("error");
     }
   }
 
