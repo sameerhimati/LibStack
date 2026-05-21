@@ -52,8 +52,13 @@ Goal: phone-side reading work writes back to the vault via a Cloudflare Worker, 
 
 Goal: ship the third vault write type, finish the polish list, validate the redesigned mobile experience.
 
-- [ ] **Phone-validate the 2026-05-20 UX changes** — 15+ min of real use on iPhone before piling on. Watch: notes pill prominence/reach, sheet textarea on iOS keyboard, cluster-collapse feel after a day, Resume card signal-vs-noise.
-- [ ] **Highlights v1.1** — spike iOS Safari selection capture on a real phone first; decide vault write contract in `PLAN-vault-bridge.md` *before* coding (append under `## Highlights` in existing notes file vs sibling file); add `POST /api/highlights` mirroring `/api/notes`, reusing IndexedDB write-queue path. Touch points: `src/components/ArticleActions.tsx`, `workers/vault-bridge/src/index.ts`.
+- [ ] **Mobile formatting polish** (flagged 2026-05-20 via screenshots):
+  - Long article titles overflow on iPhone (`<h1>` in article page has no `break-words`)
+  - Code blocks and KaTeX equations already have `overflow-x: auto` but no scroll affordance — users can't tell they're swipeable. Faded right-edge or scroll-shadow would help.
+  - Possibly smaller text or wrap-anywhere for very long single-token lines in code blocks
+- [ ] **Notes-vs-highlights pivot decision** — Sameer floated removing notes for highlights-only on phone (typing is friction; highlights are more natural). Decide *before* Highlights v1.1 — infrastructure overlaps. See memory `project_libstack_notes_pivot.md`.
+- [ ] **Listen-to-article** — new thread 2026-05-20. MVP: Web Speech API (`SpeechSynthesisUtterance`) — free, native iOS, no API key. Per-article "Listen" button alongside mark-read. Bigger version overlaps with NotebookLM thread (different scope, defer).
+- [ ] **Highlights v1.1** — spike iOS Safari selection capture on a real phone first; decide vault write contract in `PLAN-vault-bridge.md` *before* coding. Add `POST /api/highlights` mirroring `/api/notes`, reusing IndexedDB queue. Touch points: `src/components/ArticleActions.tsx`, `workers/vault-bridge/src/index.ts`. *Note:* the notes-vs-highlights pivot decision may reshape this into "rebuild sheet around selection capture instead of textarea" rather than additive.
 - [ ] **Sort / filter** — beyond mode pills: sort by added-recency or read-status; quick "unread only" toggle
 - [ ] **Image localization** — cache article images locally so offline reading actually has images
 - [ ] **Content-render polish** — Shiki for code, richer markdown rendering, type controls (font size, line height, theme)
