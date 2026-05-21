@@ -14,6 +14,7 @@ export default function ArticleActions({
   title,
   url,
   mode,
+  initialRead = false,
   existingNotes,
   existingNotesHtml,
 }: {
@@ -21,13 +22,14 @@ export default function ArticleActions({
   title: string;
   url: string;
   mode?: string;
+  initialRead?: boolean;
   existingNotes?: string;
   existingNotesHtml?: string;
 }) {
   const draftKey = `libstack:note:${slug}`;
   const [note, setNote] = useState("");
   const [save, setSave] = useState<SaveState>("idle");
-  const [read, setRead] = useState(false);
+  const [read, setRead] = useState(initialRead);
   const [readMsg, setReadMsg] = useState<string | null>(null);
   const [pending, setPending] = useState(0);
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -90,17 +92,33 @@ export default function ArticleActions({
     timer.current = setTimeout(() => void flushNote(v), AUTOSAVE_MS);
   }
 
-  async function markRead() {
-    setRead(true); // optimistic
-    markReadLocally(slug); // cluster index reflects immediately
-    setReadMsg(null);
-    const r = await sendOrQueue("/api/mark-read", { url });
-    if (r.status === "ok") setReadMsg("marked read — drops off the feed shortly");
-    else if (r.status === "queued") setReadMsg("offline — will sync on reconnect");
-    else {
-      setRead(false); // revert: the queue line didn't match (404/409)
+  async function toggleRead() {
+    if (read) {
+      // Unmark flow: [x] → [ ]
+      setRead(false); // optimistic
       unmarkReadLocally(slug);
-      setReadMsg(`couldn't mark read: ${r.message}`);
+      setReadMsg(null);
+      const r = await sendOrQueue("/api/unmark-read", { url });
+      if (r.status === "ok") setReadMsg("unmarked — back in the feed shortly");
+      else if (r.status === "queued") setReadMsg("offline — will sync on reconnect");
+      else {
+        setRead(true); // revert: the queue line didn't match (404/409)
+        markReadLocally(slug);
+        setReadMsg(`couldn't unmark: ${r.message}`);
+      }
+    } else {
+      // Mark flow: [ ] → [x]
+      setRead(true); // optimistic
+      markReadLocally(slug); // cluster index reflects immediately
+      setReadMsg(null);
+      const r = await sendOrQueue("/api/mark-read", { url });
+      if (r.status === "ok") setReadMsg("marked read — drops off the feed shortly");
+      else if (r.status === "queued") setReadMsg("offline — will sync on reconnect");
+      else {
+        setRead(false); // revert: the queue line didn't match (404/409)
+        unmarkReadLocally(slug);
+        setReadMsg(`couldn't mark read: ${r.message}`);
+      }
     }
     void pendingCount().then(setPending);
   }
@@ -125,11 +143,10 @@ export default function ArticleActions({
       {/* Inline action row — sits above the article title, not sticky. */}
       <div className="flex items-center justify-between gap-3">
         <button
-          onClick={markRead}
-          disabled={read}
-          className="rounded border border-black/15 px-3 py-1.5 text-sm hover:border-accent hover:text-accent disabled:cursor-default disabled:opacity-50 dark:border-white/15"
+          onClick={toggleRead}
+          className="rounded border border-black/15 px-3 py-1.5 text-sm hover:border-accent hover:text-accent dark:border-white/15"
         >
-          {read ? "✓ read" : "Mark read"}
+          {read ? "Unmark read" : "Mark read"}
         </button>
         <span className="truncate text-xs text-muted">
           {readMsg ?? (pending > 0 ? `pending sync (${pending})` : "")}
@@ -275,11 +292,10 @@ export default function ArticleActions({
                 </span>
               </div>
               <button
-                onClick={markRead}
-                disabled={read}
-                className="shrink-0 rounded border border-black/15 px-2.5 py-1 text-xs hover:border-accent hover:text-accent disabled:opacity-50 dark:border-white/15"
+                onClick={toggleRead}
+                className="shrink-0 rounded border border-black/15 px-2.5 py-1 text-xs hover:border-accent hover:text-accent dark:border-white/15"
               >
-                {read ? "✓ read" : "Mark read"}
+                {read ? "Unmark read" : "Mark read"}
               </button>
             </div>
           </div>

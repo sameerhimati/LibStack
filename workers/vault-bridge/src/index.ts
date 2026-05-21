@@ -1,9 +1,10 @@
 /**
  * vault-bridge — LibStack PWA → knowledge vault round-trip.
  *
- * Two endpoints, both authed by a shared secret in the `x-secret` header:
- *   POST /api/notes      → upsert inbox/raw/captures/notes/<slug>.md (overwrite)
- *   POST /api/mark-read  → flip [ ]→[x] for a URL in inbox/reading-queue.md
+ * Three endpoints, all authed by a shared secret in the `x-secret` header:
+ *   POST /api/notes        → upsert inbox/raw/captures/notes/<slug>.md (overwrite)
+ *   POST /api/mark-read    → flip [ ]→[x] for a URL in inbox/reading-queue.md
+ *   POST /api/unmark-read  → flip [x]→[ ] for a URL in inbox/reading-queue.md
  *
  * Writes go to GitHub via the Contents API with optimistic concurrency
  * (read sha → conditional PUT → retry on 409). The vault git repo stays
@@ -227,6 +228,58 @@ async function handleMarkRead(
   return json(409, { error: "conflict after retries" }, origin);
 }
 
+// ── endpoint: unmark-read ──────────────────────────────────────────────────
+
+async function handleUnmarkRead(
+  env: Env,
+  p: { url?: string },
+  origin: string | null,
+): Promise<Response> {
+  if (!p.url) return json(400, { error: "url required" }, origin);
+  const target = normalizeUrl(p.url);
+
+  for (let attempt = 0; attempt < RETRIES; attempt++) {
+    const file = await ghGet(env, QUEUE_PATH);
+    if (!file) return json(500, { error: "reading-queue.md not found" }, origin);
+
+    const lines = file.content.split("\n");
+    const hits: number[] = [];
+    for (let i = 0; i < lines.length; i++) {
+      const m = lines[i].match(QUEUE_LINE);
+      if (m && normalizeUrl(m[2]) === target) hits.push(i);
+    }
+
+    if (hits.length === 0) {
+      return json(404, { error: "no queue entry matches", normalized: target }, origin);
+    }
+    if (hits.length > 1) {
+      return json(
+        409,
+        { error: "multiple queue entries match", lines: hits.map((i) => i + 1), normalized: target },
+        origin,
+      );
+    }
+
+    const i = hits[0];
+    if (/^-\s+\[ \]/.test(lines[i])) {
+      return json(200, { ok: true, alreadyUnread: true, line: i + 1 }, origin);
+    }
+    lines[i] = lines[i].replace(/^(-\s+\[)x(\])/i, "$1 $2");
+
+    const put = await ghPut(
+      env,
+      QUEUE_PATH,
+      lines.join("\n"),
+      `libstack: unmark read — ${target}`,
+      file.sha,
+    );
+    if (put.ok) return json(200, { ok: true, line: i + 1 }, origin);
+    if (put.status === 409) continue; // sha race — re-read and retry
+    return json(502, { error: `github ${put.status}`, detail: await put.text() }, origin);
+  }
+  return json(409, { error: "conflict after retries" }, origin);
+}
+
 // ── dispatcher ─────────────────────────────────────────────────────────────
 
 export default {
@@ -262,6 +315,9 @@ export default {
       }
       if (url.pathname === "/api/mark-read") {
         return await handleMarkRead(env, payload as { url?: string }, origin);
+      }
+      if (url.pathname === "/api/unmark-read") {
+        return await handleUnmarkRead(env, payload as { url?: string }, origin);
       }
       return json(404, { error: "unknown endpoint" }, origin);
     } catch (e) {
