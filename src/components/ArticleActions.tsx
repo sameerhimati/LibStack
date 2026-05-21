@@ -1,31 +1,69 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { sendOrQueue } from "@/lib/vault-bridge";
-import { pendingCount } from "@/lib/write-queue";
+import { pendingCount, randomId, removePendingByClientId } from "@/lib/write-queue";
 import { markReadLocally, unmarkReadLocally } from "@/lib/read-state";
 
 type SaveState = "idle" | "saving" | "saved" | "queued" | "error";
 
+// Trim leading/trailing whitespace from a Range. Long-press selections on iOS
+// (and double/triple-click on desktop) frequently include trailing spaces or
+// the trailing newline before the closing tag — without this the <mark>
+// extends past the visible text.
+function trimRangeWhitespace(range: Range): Range {
+  const t = range.cloneRange();
+  if (t.startContainer.nodeType === Node.TEXT_NODE) {
+    const txt = t.startContainer.textContent ?? "";
+    let off = t.startOffset;
+    while (off < txt.length && /\s/.test(txt[off])) off++;
+    if (off > t.startOffset) t.setStart(t.startContainer, off);
+  }
+  if (t.endContainer.nodeType === Node.TEXT_NODE) {
+    const txt = t.endContainer.textContent ?? "";
+    let off = t.endOffset;
+    while (off > 0 && /\s/.test(txt[off - 1])) off--;
+    if (off < t.endOffset) t.setEnd(t.endContainer, off);
+  }
+  return t;
+}
+
 // Wrap a Range with a <mark>. Fast path: surroundContents (single text node).
 // Multi-node ranges throw — fall back to extract/insert which handles crossing
-// inline elements like <a> or <em> inside the quote.
-function applyMark(range: Range): boolean {
+// inline elements like <a> or <em> inside the quote. Refuses ranges whose
+// visible text is whitespace-only — those produce tall thin ghost marks in
+// the gaps between block elements.
+function applyMark(range: Range, id: string): HTMLElement | null {
+  if (range.collapsed) return null;
+  if (range.toString().trim().length === 0) return null;
   const mark = document.createElement("mark");
   mark.className = "libstack-highlight";
+  mark.dataset.libstackId = id;
   try {
     range.surroundContents(mark);
-    return true;
+    return mark;
   } catch {
     try {
       const fragment = range.extractContents();
       mark.appendChild(fragment);
       range.insertNode(mark);
-      return true;
+      return mark;
     } catch {
-      return false;
+      return null;
     }
   }
+}
+
+// Unwrap a <mark> in place: replace it with its children. The text reverts to
+// its un-highlighted form; downstream parents stay intact.
+function unwrapMark(mark: HTMLElement): void {
+  const parent = mark.parentNode;
+  if (!parent) return;
+  while (mark.firstChild) parent.insertBefore(mark.firstChild, mark);
+  parent.removeChild(mark);
+  // Coalesce adjacent text nodes the unwrap created, so future selections
+  // don't fragment at the old <mark> boundary.
+  parent.normalize();
 }
 
 export default function ArticleActions({
@@ -46,10 +84,6 @@ export default function ArticleActions({
   const [pending, setPending] = useState(0);
   const [sheetOpen, setSheetOpen] = useState(false);
 
-  // selectionText is the live mirror of the article body's selection. Updated
-  // by a selectionchange listener; the captured quote (in the modal) snapshots
-  // it at the moment the user taps "Add from selection," so any later
-  // selection drift doesn't affect a save in flight.
   const [selectionText, setSelectionText] = useState("");
 
   const [captureOpen, setCaptureOpen] = useState(false);
@@ -58,10 +92,16 @@ export default function ArticleActions({
   const [captureSave, setCaptureSave] = useState<SaveState>("idle");
   const commentRef = useRef<HTMLTextAreaElement>(null);
 
-  // Live Range mirror, updated on each selectionchange. We clone on capture
-  // so the modal flow doesn't depend on the live selection surviving.
+  // Edit-existing-highlight state. editMark holds the clicked <mark> element so
+  // we can unwrap it on remove; editId is its data-libstack-id (matches the
+  // queue entry's payload.clientId).
+  const [editMark, setEditMark] = useState<HTMLElement | null>(null);
+  const [editId, setEditId] = useState<string>("");
+  const [editQuote, setEditQuote] = useState("");
+
   const selectionRangeRef = useRef<Range | null>(null);
   const captureRangeRef = useRef<Range | null>(null);
+  const captureIdRef = useRef<string>("");
 
   useEffect(() => {
     void pendingCount().then(setPending);
@@ -70,8 +110,28 @@ export default function ArticleActions({
     return () => window.removeEventListener("libstack:sync", onSync);
   }, []);
 
-  // Track .prose selection. Only mutate state when inside .prose so the value
+  // Clean up any ghost marks left from prior sessions (whitespace-only marks
+  // produce tall thin highlight bars in the gaps between block elements).
+  // Also drop their queue entries so they don't sync to the vault later.
+  useEffect(() => {
+    const prose = document.querySelector(".prose");
+    if (!prose) return;
+    const ghosts = Array.from(
+      prose.querySelectorAll("mark.libstack-highlight"),
+    ).filter((m) => (m.textContent ?? "").trim().length === 0) as HTMLElement[];
+    if (ghosts.length === 0) return;
+    for (const g of ghosts) {
+      const id = g.dataset.libstackId;
+      if (id) void removePendingByClientId(id);
+      unwrapMark(g);
+    }
+    void pendingCount().then(setPending);
+  }, []);
+
+  // Track .prose selection — only mutate state when inside .prose so the value
   // survives opening the sheet (where another selection may briefly happen).
+  // We also ignore selections that target an existing <mark> child, so tapping
+  // an existing highlight doesn't double-up as a new selection.
   useEffect(() => {
     const onSel = () => {
       const sel = window.getSelection();
@@ -94,12 +154,32 @@ export default function ArticleActions({
     return () => document.removeEventListener("selectionchange", onSel);
   }, []);
 
-  // Close on Esc; lock scroll while the sheet (or capture modal) is open.
+  // Click-on-mark → open edit/remove modal. Delegated on .prose so newly-added
+  // marks pick up the handler without re-binding.
   useEffect(() => {
-    if (!sheetOpen && !captureOpen) return;
+    const prose = document.querySelector(".prose");
+    if (!prose) return;
+    const onClick = (e: Event) => {
+      const target = e.target as Element | null;
+      const mark = target?.closest("mark.libstack-highlight") as HTMLElement | null;
+      if (!mark) return;
+      e.preventDefault();
+      setEditMark(mark);
+      setEditId(mark.dataset.libstackId ?? "");
+      setEditQuote(mark.textContent ?? "");
+    };
+    prose.addEventListener("click", onClick);
+    return () => prose.removeEventListener("click", onClick);
+  }, []);
+
+  // Close on Esc; lock scroll while any modal is open.
+  useEffect(() => {
+    const anyOpen = sheetOpen || captureOpen || editMark !== null;
+    if (!anyOpen) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
-      if (captureOpen) setCaptureOpen(false);
+      if (editMark) setEditMark(null);
+      else if (captureOpen) setCaptureOpen(false);
       else setSheetOpen(false);
     };
     const prev = document.body.style.overflow;
@@ -109,7 +189,7 @@ export default function ArticleActions({
       window.removeEventListener("keydown", onKey);
       document.body.style.overflow = prev;
     };
-  }, [sheetOpen, captureOpen]);
+  }, [sheetOpen, captureOpen, editMark]);
 
   async function toggleRead() {
     if (read) {
@@ -142,8 +222,21 @@ export default function ArticleActions({
 
   function openCapture() {
     if (!selectionText) return;
-    captureRangeRef.current = selectionRangeRef.current?.cloneRange() ?? null;
-    setCaptureQuote(selectionText);
+    // Trim whitespace inside the Range so the resulting <mark> hugs the text.
+    const trimmed = selectionRangeRef.current
+      ? trimRangeWhitespace(selectionRangeRef.current)
+      : null;
+    const trimmedText = (trimmed?.toString() ?? selectionText).trim();
+    // Empty after trim — the selection was just whitespace between blocks.
+    // Bail rather than open the modal on a dud quote.
+    if (!trimmedText) {
+      setSelectionText("");
+      selectionRangeRef.current = null;
+      return;
+    }
+    captureRangeRef.current = trimmed;
+    captureIdRef.current = randomId();
+    setCaptureQuote(trimmedText);
     setCaptureComment("");
     setCaptureSave("idle");
     setCaptureOpen(true);
@@ -156,6 +249,7 @@ export default function ArticleActions({
     setCaptureSave("saving");
     try {
       const r = await sendOrQueue("/api/highlights", {
+        clientId: captureIdRef.current,
         slug,
         title,
         url,
@@ -169,7 +263,7 @@ export default function ArticleActions({
       void pendingCount().then(setPending);
       if (r.status === "ok" || r.status === "queued") {
         if (captureRangeRef.current) {
-          applyMark(captureRangeRef.current);
+          applyMark(captureRangeRef.current, captureIdRef.current);
           window.getSelection()?.removeAllRanges();
           captureRangeRef.current = null;
         }
@@ -183,6 +277,18 @@ export default function ArticleActions({
     }
   }
 
+  async function removeHighlight() {
+    if (!editMark) return;
+    try {
+      if (editId) await removePendingByClientId(editId);
+    } catch (e) {
+      console.error("queue removal failed", e);
+    }
+    unwrapMark(editMark);
+    setEditMark(null);
+    void pendingCount().then(setPending);
+  }
+
   const captureMeta: Record<SaveState, { dot: string; label: string }> = {
     idle: { dot: "bg-muted/40", label: "" },
     saving: { dot: "bg-accent animate-pulse", label: "saving to vault…" },
@@ -191,8 +297,6 @@ export default function ArticleActions({
     error: { dot: "bg-red-600", label: "save failed — see settings" },
   };
 
-  // Phase 1: existing-highlights list is empty (no build-time parsing yet).
-  // The pill badge stays unrendered for now.
   const highlightCount = 0;
 
   return (
@@ -306,7 +410,7 @@ export default function ArticleActions({
                   Saved highlights
                 </div>
                 <p className="text-sm text-muted">
-                  No highlights yet. Captures save to the vault and show up here next build.
+                  No highlights yet. Tap any highlight in the article to remove it.
                 </p>
               </section>
             </div>
@@ -326,7 +430,7 @@ export default function ArticleActions({
         </div>
       )}
 
-      {/* Capture modal — sits above the sheet, snapshots the selection on open */}
+      {/* Capture modal */}
       {captureOpen && (
         <div
           className="fixed inset-0 z-50 flex items-end justify-center sm:items-center"
@@ -398,6 +502,60 @@ export default function ArticleActions({
                   Save
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit / remove existing highlight */}
+      {editMark && (
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center sm:items-center"
+          aria-modal="true"
+          role="dialog"
+          aria-label="Edit highlight"
+        >
+          <button
+            type="button"
+            aria-label="Close"
+            onClick={() => setEditMark(null)}
+            className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+          />
+          <div
+            className="relative flex max-h-[85vh] w-full max-w-lg flex-col rounded-t-2xl border-t border-black/10 bg-paper shadow-2xl dark:border-white/10 dark:bg-[#15140f] sm:max-h-[80vh] sm:rounded-2xl sm:border"
+            style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
+          >
+            <div className="border-b border-black/10 px-5 py-3 dark:border-white/10">
+              <h2 className="text-sm font-semibold tracking-tight">Highlight</h2>
+            </div>
+
+            <div className="flex-1 space-y-4 overflow-y-auto px-5 py-4">
+              <section>
+                <div className="mb-2 text-[11px] uppercase tracking-wider text-muted">Quote</div>
+                <blockquote className="rounded border-l-2 border-accent bg-accent/5 px-3 py-2 text-sm italic leading-relaxed">
+                  {editQuote}
+                </blockquote>
+              </section>
+              <p className="text-xs text-muted">
+                Remove this highlight from the article. Editing the comment will land with phase 2 (vault round-trip).
+              </p>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 border-t border-black/10 px-5 py-3 text-xs dark:border-white/10">
+              <button
+                type="button"
+                onClick={() => setEditMark(null)}
+                className="rounded border border-black/15 px-3 py-1.5 text-xs hover:border-accent hover:text-accent dark:border-white/15"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void removeHighlight()}
+                className="rounded border border-red-600/40 px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-600 hover:text-paper dark:border-red-500/40 dark:text-red-400"
+              >
+                Remove highlight
+              </button>
             </div>
           </div>
         </div>

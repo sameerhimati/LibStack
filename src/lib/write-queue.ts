@@ -36,7 +36,7 @@ function hasIDB(): boolean {
 // crypto.randomUUID() is gated behind secure-context (HTTPS or localhost). On
 // a LAN-IP dev server over plain HTTP it throws, which silently breaks the
 // queue. This fallback uses non-cryptographic random — fine for queue IDs.
-function randomId(): string {
+export function randomId(): string {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
     try {
       return crypto.randomUUID();
@@ -144,4 +144,19 @@ export async function clearFailed(): Promise<void> {
 export async function pendingCount(): Promise<number> {
   if (!hasIDB()) return 0;
   return tx<number>(PENDING, "readonly", (s) => s.count());
+}
+
+/**
+ * Remove any pending entry whose payload has the given clientId. Used when a
+ * highlight is unhighlighted before the worker has flushed it — drops the
+ * unsent write so the vault never sees an entry the user already removed.
+ */
+export async function removePendingByClientId(clientId: string): Promise<number> {
+  if (!hasIDB()) return 0;
+  const all = await listPending();
+  const matching = all.filter(
+    (e) => typeof e.payload === "object" && e.payload !== null && (e.payload as { clientId?: string }).clientId === clientId,
+  );
+  for (const e of matching) await removePending(e.id);
+  return matching.length;
 }
