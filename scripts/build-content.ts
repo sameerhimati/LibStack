@@ -7,6 +7,7 @@ import katex from "katex";
 
 const VAULT = process.env.VAULT_PATH || path.join(process.env.HOME || "", "Desktop/knowledge");
 const QUEUE = path.join(VAULT, "inbox/reading-queue.md");
+const NOTES_DIR = path.join(VAULT, "inbox/raw/captures/notes");
 const OUT = path.join(process.cwd(), "content/articles.json");
 const SEARCH_INDEX = path.join(process.cwd(), "public/search-index.json");
 const CACHE = path.join(process.cwd(), "content/cache");
@@ -30,6 +31,8 @@ type Article = {
   fetchedAt?: string;
   fetchError?: string;
   domain: string;
+  existingNotes?: string;
+  existingNotesHtml?: string;
 };
 
 type Cluster = { title: string; description?: string; articles: Article[] };
@@ -248,6 +251,134 @@ async function extractArticle(url: string): Promise<Partial<Article>> {
   }
 }
 
+// ── existing-notes loader ──────────────────────────────────────────────────
+// The vault-bridge worker writes notes to inbox/raw/captures/notes/<slug>.md
+// with a header block (`# title`, `Source: libstack`, `URL: ...`, optional
+// `Mode: ...`, `Updated: ...`) followed by a blank line and the body. We
+// strip the header so the reader only sees the body the user actually wrote.
+
+const NOTE_HEADER_KEY = /^(#\s|Source:|URL:|Mode:|Updated:)/;
+
+function stripNoteHeader(raw: string): string {
+  const lines = raw.split("\n");
+  let i = 0;
+  while (i < lines.length && NOTE_HEADER_KEY.test(lines[i])) i++;
+  while (i < lines.length && lines[i].trim() === "") i++;
+  return lines.slice(i).join("\n").trim();
+}
+
+function loadExistingNote(slug: string): string | undefined {
+  const file = path.join(NOTES_DIR, `${slug}.md`);
+  if (!existsSync(file)) return undefined;
+  try {
+    const body = stripNoteHeader(readFileSync(file, "utf8"));
+    return body || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+// Minimal markdown → HTML renderer for vault notes. Handles paragraphs,
+// ATX headings (h2–h4), unordered/ordered lists, blockquotes, inline links,
+// **bold**, *italic*, and `code`. Anything more exotic falls through as
+// escaped paragraph text. Notes are usually short, plain, and personal —
+// this is intentionally small rather than pulling in a parser dep.
+
+function escHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function renderInline(text: string): string {
+  let out = escHtml(text);
+  // Inline code first so its contents don't get further processed.
+  out = out.replace(/`([^`]+)`/g, (_m, code) => `<code>${code}</code>`);
+  // Links [label](url) — url already escaped.
+  out = out.replace(
+    /\[([^\]]+)\]\(([^)\s]+)\)/g,
+    (_m, label, url) =>
+      `<a href="${url}" rel="noopener noreferrer" target="_blank">${label}</a>`,
+  );
+  // Bold then italic. Use non-greedy.
+  out = out.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+  out = out.replace(/(^|[^*])\*([^*]+)\*/g, "$1<em>$2</em>");
+  return out;
+}
+
+function renderNoteMarkdown(md: string): string {
+  const lines = md.split("\n");
+  const out: string[] = [];
+  let i = 0;
+  let para: string[] = [];
+
+  const flushPara = () => {
+    if (para.length === 0) return;
+    out.push(`<p>${renderInline(para.join(" "))}</p>`);
+    para = [];
+  };
+
+  while (i < lines.length) {
+    const line = lines[i];
+    const trimmed = line.trim();
+
+    if (trimmed === "") {
+      flushPara();
+      i++;
+      continue;
+    }
+
+    const h = trimmed.match(/^(#{1,4})\s+(.*)$/);
+    if (h) {
+      flushPara();
+      const level = Math.min(Math.max(h[1].length + 1, 2), 5); // bump h1→h2
+      out.push(`<h${level}>${renderInline(h[2])}</h${level}>`);
+      i++;
+      continue;
+    }
+
+    if (/^>\s?/.test(trimmed)) {
+      flushPara();
+      const buf: string[] = [];
+      while (i < lines.length && /^>\s?/.test(lines[i].trim())) {
+        buf.push(lines[i].trim().replace(/^>\s?/, ""));
+        i++;
+      }
+      out.push(`<blockquote><p>${renderInline(buf.join(" "))}</p></blockquote>`);
+      continue;
+    }
+
+    if (/^[-*]\s+/.test(trimmed)) {
+      flushPara();
+      const items: string[] = [];
+      while (i < lines.length && /^[-*]\s+/.test(lines[i].trim())) {
+        items.push(lines[i].trim().replace(/^[-*]\s+/, ""));
+        i++;
+      }
+      out.push(`<ul>${items.map((it) => `<li>${renderInline(it)}</li>`).join("")}</ul>`);
+      continue;
+    }
+
+    if (/^\d+\.\s+/.test(trimmed)) {
+      flushPara();
+      const items: string[] = [];
+      while (i < lines.length && /^\d+\.\s+/.test(lines[i].trim())) {
+        items.push(lines[i].trim().replace(/^\d+\.\s+/, ""));
+        i++;
+      }
+      out.push(`<ol>${items.map((it) => `<li>${renderInline(it)}</li>`).join("")}</ol>`);
+      continue;
+    }
+
+    para.push(trimmed);
+    i++;
+  }
+  flushPara();
+  return out.join("\n");
+}
+
 async function main() {
   if (!existsSync(QUEUE)) { console.error(`Reading queue not found at ${QUEUE}`); process.exit(1); }
   if (!existsSync(CACHE)) mkdirSync(CACHE, { recursive: true });
@@ -290,6 +421,24 @@ async function main() {
     }
   }
   await Promise.all(Array.from({ length: CONCURRENCY }, () => worker()));
+
+  // Attach any prior vault notes (written by the vault-bridge worker). Read
+  // each per-article note file once at build time and pre-render to HTML so
+  // the client doesn't need a markdown parser.
+  let notesAttached = 0;
+  if (existsSync(NOTES_DIR)) {
+    for (const c of clusters) {
+      for (const a of c.articles) {
+        const body = loadExistingNote(a.slug);
+        if (body) {
+          a.existingNotes = body;
+          a.existingNotesHtml = renderNoteMarkdown(body);
+          notesAttached++;
+        }
+      }
+    }
+  }
+  console.log(`Existing vault notes attached: ${notesAttached}`);
 
   const library = { generatedAt: new Date().toISOString(), vaultPath: VAULT, clusters };
   writeFileSync(OUT, JSON.stringify(library, null, 2));
