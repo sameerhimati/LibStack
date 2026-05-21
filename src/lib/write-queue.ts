@@ -18,7 +18,7 @@ const FAILED = "failed_writes";
 
 export const MAX_ATTEMPTS = 5;
 
-export type Endpoint = "/api/notes" | "/api/mark-read" | "/api/unmark-read";
+export type Endpoint = "/api/notes" | "/api/mark-read" | "/api/unmark-read" | "/api/highlights";
 
 export interface QueueEntry {
   id: string;
