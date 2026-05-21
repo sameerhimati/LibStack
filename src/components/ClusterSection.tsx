@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { Cluster, Mode } from "@/lib/types";
 import ModeBadge from "./ModeBadge";
 import { reconcileLocalReadSet, useLocalReadSet } from "@/lib/read-state";
+import { useClusterCollapsed } from "@/lib/nav-state";
 
 type Filter = "all" | Mode;
 
@@ -39,34 +40,57 @@ export default function ClusterSection({ cluster }: { cluster: Cluster }) {
   const [filter, setFilter] = useState<Filter>("all");
   const filtered = filter === "all" ? ordered : ordered.filter((a) => a.mode === filter);
 
+  const { collapsed, toggle } = useClusterCollapsed(cluster.title);
+
   if (cluster.articles.length === 0) return null;
 
   const unreadCount = cluster.articles.filter((a) => !isRead(a)).length;
 
   return (
     <section className="space-y-3">
-      <div>
-        <h2 className="text-xl font-semibold">{cluster.title}</h2>
-        {cluster.description && (
-          <p className="text-sm text-muted mt-1">{cluster.description}</p>
-        )}
-        <p className="text-xs text-muted mt-1">
-          {unreadCount} unread · {cluster.articles.length} total
-        </p>
-        {presentModes.length > 0 && (
-          <div className="mt-2 flex flex-wrap gap-1.5 text-xs">
-            <FilterButton active={filter === "all"} onClick={() => setFilter("all")}>
-              All
+      <button
+        type="button"
+        onClick={toggle}
+        aria-expanded={!collapsed}
+        aria-controls={`cluster-${cluster.title.replace(/\s+/g, "-")}`}
+        className="-mx-2 flex w-full items-start gap-3 rounded px-2 py-1 text-left transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+      >
+        <div className="flex-1 min-w-0">
+          <h2 className="text-xl font-semibold">{cluster.title}</h2>
+          {cluster.description && !collapsed && (
+            <p className="text-sm text-muted mt-1">{cluster.description}</p>
+          )}
+          <p className="text-xs text-muted mt-1">
+            {unreadCount} unread · {cluster.articles.length} total
+          </p>
+        </div>
+        <span
+          aria-hidden
+          className={
+            "mt-1 shrink-0 text-muted transition-transform " +
+            (collapsed ? "" : "rotate-90")
+          }
+        >
+          ›
+        </span>
+      </button>
+      {!collapsed && presentModes.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 text-xs">
+          <FilterButton active={filter === "all"} onClick={() => setFilter("all")}>
+            All
+          </FilterButton>
+          {presentModes.map((m) => (
+            <FilterButton key={m} active={filter === m} onClick={() => setFilter(m)}>
+              {m}
             </FilterButton>
-            {presentModes.map((m) => (
-              <FilterButton key={m} active={filter === m} onClick={() => setFilter(m)}>
-                {m}
-              </FilterButton>
-            ))}
-          </div>
-        )}
-      </div>
-      <ul className="divide-y divide-black/5 dark:divide-white/5 border-y border-black/5 dark:border-white/5">
+          ))}
+        </div>
+      )}
+      {!collapsed && (
+      <ul
+        id={`cluster-${cluster.title.replace(/\s+/g, "-")}`}
+        className="divide-y divide-black/5 dark:divide-white/5 border-y border-black/5 dark:border-white/5"
+      >
         {filtered.map((a) => {
           const read = isRead(a);
           return (
@@ -113,6 +137,7 @@ export default function ClusterSection({ cluster }: { cluster: Cluster }) {
           );
         })}
       </ul>
+      )}
     </section>
   );
 }

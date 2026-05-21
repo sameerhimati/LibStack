@@ -1,6 +1,7 @@
 import { loadLibrary } from "@/lib/articles";
 import Search from "@/components/Search";
 import ClusterSection from "@/components/ClusterSection";
+import ResumeSurface from "@/components/ResumeSurface";
 
 export default function Home() {
   const lib = loadLibrary();
@@ -11,11 +12,14 @@ export default function Home() {
     (n, c) => n + c.articles.filter((a) => !a.read && a.content).length, 0
   );
 
-  const clusterList = (
-    <div className="space-y-10">
-      {lib.clusters.map((cluster) => (
-        <ClusterSection key={cluster.title} cluster={cluster} />
-      ))}
+  const homeBody = (
+    <div className="space-y-8">
+      <ResumeSurface library={lib} />
+      <div className="space-y-10">
+        {lib.clusters.map((cluster) => (
+          <ClusterSection key={cluster.title} cluster={cluster} />
+        ))}
+      </div>
     </div>
   );
 
@@ -29,7 +33,7 @@ export default function Home() {
         </p>
       </header>
 
-      <Search>{clusterList}</Search>
+      <Search>{homeBody}</Search>
     </div>
   );
 }
