@@ -109,17 +109,15 @@ export default function ClusterSection({ cluster }: { cluster: Cluster }) {
                 {a.content ? (
                   <Link
                     href={`/article/${a.slug}/`}
-                    className={"font-medium hover:text-accent " + (read ? "line-through decoration-1 decoration-muted/60" : "")}
+                    className="font-medium hover:text-accent"
                   >
                     {a.title}
                   </Link>
                 ) : (
-                  <span className={"font-medium " + (read ? "line-through decoration-1 decoration-muted/60" : "")}>
-                    {a.title}
-                  </span>
+                  <span className="font-medium">{a.title}</span>
                 )}
                 <span className="text-xs text-muted shrink-0">{a.domain}</span>
-                {!a.content && !read && (
+                {!a.content && (
                   <a
                     href={a.url}
                     target="_blank"

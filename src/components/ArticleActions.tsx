@@ -260,7 +260,8 @@ export default function ArticleActions({
                   }}
                   rows={6}
                   placeholder="Thoughts, quotes, questions — autosaves to the vault for /compile."
-                  className="block w-full rounded border border-black/15 bg-transparent p-3 text-sm leading-relaxed focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent dark:border-white/15"
+                  className="block w-full rounded border border-black/15 bg-transparent p-3 leading-relaxed focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent dark:border-white/15"
+                  style={{ fontSize: 16 }}
                 />
               </section>
             </div>
