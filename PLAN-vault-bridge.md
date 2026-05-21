@@ -194,6 +194,84 @@ curl ... -d '{"url":"https://example.com/not-in-queue"}'
 
 ---
 
+## v1.1 — Highlights + Unmark-read (2026-05-21)
+
+v1 shipped two endpoints (notes, mark-read) on 2026-05-18 and ran in production for three days. Two extensions land in v1.1:
+
+1. **Unmark-read** — `POST /api/unmark-read` (shipped 2026-05-21, commit `b79d59e`). Mirrors mark-read precisely with inverse toggle (`[x]` → `[ ]`); same auth, URL normalization, retry, response surface. Commit message in vault: `libstack: unmark read — <normalized-url>`.
+
+2. **Highlights** — captures per-quote annotations from the phone into the vault. Replaces the freeform-notes primitive as the dominant capture surface; notes endpoint stays live during migration but the sheet UI is repurposed.
+
+### Highlights — vault contract
+
+| Write | Vault location | Semantics |
+|---|---|---|
+| Highlight | `inbox/raw/captures/highlights/<article-slug>.md` | **Append-only** — read existing, append entry + separator, commit |
+
+Per-entry format (markdown):
+
+```
+> Quoted text from the article. Multi-line quotes preserved.
+
+Optional comment from Sameer.
+
+<!-- libstack-highlight: 2026-05-21T12:34:56Z -->
+
+---
+```
+
+The trailing `---` separates entries; the HTML comment carries the timestamp without rendering in Obsidian. First entry in a fresh file omits no leading delimiter — just the entry then `---`. Edits to existing entries happen in Obsidian (out of phone scope).
+
+### Highlights — endpoint
+
+`POST /api/highlights` (vault-bridge worker)
+
+- Request: `{ slug: string, title: string, url: string, mode?: string, quote: string, comment?: string }`
+- Slug validated as `/^[a-z0-9-]+$/` (matches notes endpoint).
+- Worker reads `inbox/raw/captures/highlights/<slug>.md` via GitHub Contents API (or treats as empty if 404), appends the new entry, commits with `If-Match` SHA. 409 retry × 3.
+- Commit message: `libstack: highlight — <first 40 chars of quote>…`
+- Responses: `200 { ok: true, path }` on commit; `400` for missing fields or bad slug; `401` for bad secret; `409` for unrecoverable concurrency; `502` for upstream GitHub failure.
+
+### Highlights — UI (PWA, sheet-only in phase 1)
+
+- Bottom-right pill renames `Notes` → `Highlights (N)`. N comes from build-time parsing; in phase 1 (spike) it's always 0.
+- Tap pill → sheet opens with:
+  - `+ Add from selection` button at top — disabled if no text is currently selected in the article body. When enabled, shows a 60-char preview of the captured selection.
+  - List of existing highlights below (phase 1: empty placeholder).
+- Capture flow:
+  - User long-presses inside `.prose` to select text.
+  - A `selectionchange` listener captures the selected string + range into component state continuously.
+  - User taps the pill. The captured selection is read from component state (not from `window.getSelection()` at tap time), so it survives the sheet open even if iOS clears the live selection.
+  - Tap `+ Add from selection` → modal with quote (read-only) + comment textarea + Save/Cancel.
+  - Save: POST `/api/highlights` via existing `sendOrQueue` path; queues offline as usual.
+- The known iOS unknown: whether `selectionchange` fires reliably inside `.prose` and whether `window.getSelection().toString()` returns the long-pressed text. If `selectionchange` doesn't fire, fall back to `mouseup`/`touchend` polling. If selection text is empty at capture time, fall back to design B (tiny floating `+` button on selection) or design C (manual paste-in modal) — both pre-designed.
+
+### Highlights — build-time parsing (phase 2)
+
+`scripts/build-content.ts` mirrors the notes loader (lines 254–279) for the highlights file:
+- `existsSync` guard on `$VAULT/inbox/raw/captures/highlights/<slug>.md`.
+- Split file on `---` separator lines.
+- Per entry: collect lines starting `> ` as the quote; remaining paragraphs before the HTML comment as the comment; parse `<!-- libstack-highlight: ISO -->` for timestamp.
+- Attach `highlights?: Array<{ quote: string; comment?: string; timestamp: string }>` to each Article.
+- Reader sheet uses this to render the list. Existing minimal-markdown renderer (`renderNoteMarkdown` in build-content.ts:311) handles the comment paragraphs unchanged.
+
+### Migration from notes
+
+- `/api/notes` endpoint stays live in the worker — required to flush any in-flight IndexedDB queue entries from before the cutover.
+- Existing notes files in the vault stay on disk (no delete).
+- The PWA sheet drops the notes textarea and the "From the vault" notes rendering. Old notes are read in Obsidian.
+- After ~1 week of no queued notes activity, the `/api/notes` endpoint can be removed in a follow-up.
+
+### v1.1 scope discipline
+
+- Phase 1 (this session, branch `feat/highlights-spike`): UI capture + IndexedDB queueing only. No worker endpoint yet; the queued payloads accumulate as a validation signal (inspectable via DevTools → Application → IndexedDB).
+- Phase 2 (next session, branch `feat/highlights-roundtrip`): worker endpoint + build-script parsing + existing-highlights list rendering.
+- No inline highlight marks in the article body for v1.1 — sheet-only surface.
+- No edit/delete of existing highlights from the phone — fix typos in Obsidian. Reduces concurrency surface.
+- No global highlights file (per-article only — mirrors notes pattern, matches build-script wiring).
+
+---
+
 ## Critical files (quick reference)
 
 ```
