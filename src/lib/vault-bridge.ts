@@ -24,24 +24,32 @@ import {
 const SECRET_KEY = "secret";
 const URL_KEY = "workerUrl";
 
+// The worker URL is not a secret — only SHARED_SECRET is. Defaulting it means a
+// fresh origin only needs the shared secret entered, instead of two fields. (We
+// run on several aliased origins — see CanonicalRedirect — and per-origin
+// IndexedDB doesn't carry config across them.)
+export const DEFAULT_WORKER_URL = "https://vault-bridge.sameerhimati98.workers.dev";
+
 export async function getSecret(): Promise<string | undefined> {
   return getSetting(SECRET_KEY);
 }
 export async function setSecret(v: string): Promise<void> {
   return setSetting(SECRET_KEY, v.trim());
 }
-export async function getWorkerUrl(): Promise<string | undefined> {
-  return getSetting(URL_KEY);
+export async function getWorkerUrl(): Promise<string> {
+  return (await getSetting(URL_KEY)) || DEFAULT_WORKER_URL;
 }
 export async function setWorkerUrl(v: string): Promise<void> {
   return setSetting(URL_KEY, v.trim().replace(/\/$/, ""));
 }
 export async function isConfigured(): Promise<boolean> {
-  return Boolean((await getSecret()) && (await getWorkerUrl()));
+  // URL always resolves to a default now, so configuration = the secret.
+  return Boolean(await getSecret());
 }
 
 type PostResult =
   | { kind: "ok"; data: unknown }
+  | { kind: "unconfigured" }
   | { kind: "transient"; error: string }
   | { kind: "terminal"; status: number; error: string };
 
@@ -55,7 +63,9 @@ function classify(status: number, body: { error?: string } | null): PostResult {
 
 async function post(endpoint: Endpoint, payload: unknown): Promise<PostResult> {
   const [secret, base] = await Promise.all([getSecret(), getWorkerUrl()]);
-  if (!secret || !base) return { kind: "transient", error: "not configured" };
+  // No secret = never set up on this origin. Distinct from offline: queuing it
+  // would silently pile up writes that can't succeed, so surface it instead.
+  if (!secret) return { kind: "unconfigured" };
   try {
     const res = await fetch(`${base}${endpoint}`, {
       method: "POST",
@@ -86,6 +96,8 @@ export type SendOutcome =
 export async function sendOrQueue(endpoint: Endpoint, payload: unknown): Promise<SendOutcome> {
   const r = await post(endpoint, payload);
   if (r.kind === "ok") return { status: "ok" };
+  if (r.kind === "unconfigured")
+    return { status: "error", message: "Add your vault secret in Settings →" };
   if (r.kind === "terminal") return { status: "error", message: r.error };
   await enqueue(endpoint, payload);
   return { status: "queued" };
@@ -118,6 +130,11 @@ export async function flushQueue(): Promise<FlushSummary> {
         await removePending(entry.id);
         sent++;
         continue;
+      }
+      if (r.kind === "unconfigured") {
+        // No secret yet — stop the drain without burning attempts. Resumes once
+        // the secret is entered and the next flush trigger fires.
+        break;
       }
       if (r.kind === "terminal") {
         await moveToFailed({ ...entry, lastError: r.error });
