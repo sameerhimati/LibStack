@@ -1,9 +1,9 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import { allArticles, findBySlug } from "@/lib/articles";
 import ModeBadge from "@/components/ModeBadge";
 import ArticleActions from "@/components/ArticleActions";
 import LastOpenedRecorder from "@/components/LastOpenedRecorder";
+import BackLink from "@/components/BackLink";
 
 export function generateStaticParams() {
   return allArticles()
@@ -19,7 +19,7 @@ export default function ArticlePage({ params }: { params: { slug: string } }) {
     <article className="space-y-6">
       <LastOpenedRecorder slug={article.slug} />
       <div className="space-y-3">
-        <Link href="/" className="text-sm text-muted hover:text-accent">← Back</Link>
+        <BackLink />
         <ArticleActions
           slug={article.slug}
           title={article.title}
