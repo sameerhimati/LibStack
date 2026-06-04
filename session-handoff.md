@@ -1,5 +1,5 @@
 # Session Handoff
-> Last updated: 2026-05-21 — highlights pivot landed in a working spike (notes UI killed, selection-capture + inline marks + tap-to-remove), unmark-read shipped end-to-end, mobile polish + initialRead wired. Five real bugs caught & fixed against the live iPhone during the session. Phase 2 (worker round-trip + global view) queued for next session.
+> Last updated: 2026-06-01 — **vault target changed: highlights now write to `inbox/notes/`, not `inbox/raw/captures/` (see "Vault path change" note below).** Prior (2026-05-21): highlights pivot landed in a working spike (notes UI killed, selection-capture + inline marks + tap-to-remove), unmark-read shipped end-to-end, mobile polish + initialRead wired. Five real bugs caught & fixed against the live iPhone during the session. Phase 2 (worker round-trip + global view) queued for next session.
 
 ## TL;DR
 The notes→highlights pivot is real. Main has four new commits (mobile polish, unmark-read worker+UI, initialRead wire-up, v1.1 doc spec) — all pushed. `feat/highlights-spike` has four more commits (capture flow + iteration against real-device feedback) — **unpushed**, will land with phase 2's worker endpoint so the cutover is a single ship. The spike works: long-press text → tap "Highlights" pill → "Add from selection" → modal → save → inline accent-tinted `<mark>` persists in the article body. Tap any mark → remove.
@@ -8,6 +8,16 @@ Three load-bearing learnings from real-device testing:
 1. `crypto.randomUUID()` fails on LAN-IP/HTTP dev (secure-context gate) — fallback to timestamp+Math.random
 2. Whitespace-only selections produced ghost `<mark>` bars between paragraphs — fixed with three layers (Range trim, openCapture guard, applyMark guard) plus on-mount cleanup for orphan queue entries
 3. iOS-style selection survives the sheet open if we mirror it into a `ref` continuously — `selectionchange` listener works reliably
+
+## ⚠️ Vault path change — highlights → `inbox/notes/` (2026-06-01)
+**Decision (Sameer, 2026-06-01):** LibStack highlights now land in the vault at **`inbox/notes/`**, NOT the previously-spec'd `inbox/raw/captures/highlights/<slug>.md`. He created `inbox/notes/` as the home for reading notes + highlights. Reasoning: a reader's own highlights/reactions are *their thinking*, not ephemeral captured source — so they don't belong under `raw/`, which is triage-and-discard. Proposed path: **`inbox/notes/highlights/<slug>.md`** (open: highlights/ subfolder vs flat in `inbox/notes/` — confirm with Sameer).
+
+When Phase 2 is built, update the path in **all three** places (they currently say `inbox/raw/captures/highlights/`):
+1. **Worker** — `POST /api/highlights` write path → `inbox/notes/...`
+2. **Build script** — `scripts/build-content.ts` highlights loader read path → same
+3. **`PLAN-vault-bridge.md` v1.1 spec** — update the contract to match.
+
+Broader context: this is the first concrete step of a vault reorg (reading-notes moving out of `research/` → under `inbox/`). The vault's `/read` + `/compile` skills still point at `research/reading-notes/`; the full reorg is parked for a later vault session. For LibStack, the only change is retargeting highlights to `inbox/notes/`.
 
 ## Completed This Session
 - [x] **Mobile formatting polish** (`41c4fc7`) — `break-words` on h1 (long titles wrap) + `background-attachment: local` scroll-shadow on `.prose pre` and `.katex-display` (right-edge fade that vanishes when scrolled to the end). Both light + dark modes via `prefers-color-scheme`. Subagent in worktree.
@@ -40,7 +50,7 @@ Then in priority order:
 
 1. **Phase 2 — Highlights round-trip** (task #4):
    - **Worker** — new `POST /api/highlights` handler in `workers/vault-bridge/src/index.ts`. Append-mode (not overwrite): read existing file (404 = treat as empty), append entry + `---` separator, conditional PUT with retry. Entry shape: `> {quote}\n\n{comment if present}\n\n<!-- libstack-highlight: {ISO} -->\n\n---`. Commit message: `libstack: highlight — {first 40 chars of quote}…`. Reuse `normalizeUrl`, GitHub Contents fetch+PUT, 409 retry × 3, auth, CORS. Add `/api/highlights` to the route table at the top.
-   - **Build script** — `scripts/build-content.ts` mirrors the notes loader at lines 254–279 for `$VAULT/inbox/raw/captures/highlights/<slug>.md`. Split on `---`, parse each entry (collect `> ` lines as quote, paragraphs before `<!-- libstack-highlight:` as comment, parse ISO timestamp). Attach `highlights?: Array<{quote, comment?, timestamp}>` to each Article. The existing `renderNoteMarkdown` at line 311 handles the comment markdown unchanged.
+   - **Build script** — `scripts/build-content.ts` mirrors the notes loader at lines 254–279 for `$VAULT/inbox/notes/highlights/<slug>.md` (path changed 2026-06-01 — see "Vault path change" note above; was `inbox/raw/captures/highlights/`). Split on `---`, parse each entry (collect `> ` lines as quote, paragraphs before `<!-- libstack-highlight:` as comment, parse ISO timestamp). Attach `highlights?: Array<{quote, comment?, timestamp}>` to each Article. The existing `renderNoteMarkdown` at line 311 handles the comment markdown unchanged.
    - **Sheet renders real list** — replace the "No highlights yet" placeholder with the actual list from `article.highlights`. Quote rendered as blockquote, comment below, relative timestamp on the right.
    - **Cleanup** — remove `existingNotes`/`existingNotesHtml` from build script + Article type + page.tsx (dead code from the notes era). Pill badge becomes `Highlights ({highlights.length})`.
    - **Merge spike** — once phase 2 works end-to-end locally, merge `feat/highlights-spike` + phase 2 commits to main as a single coherent ship.

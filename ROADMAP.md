@@ -73,6 +73,7 @@ Goal: LibStack composes more deeply with vault data.
 
 - [ ] **NotebookLM thread (expand)** — currently scoped as "audio link surfacing." Worth its own design pass: auto-generate NotebookLM notebooks per cluster, link audio inline with articles, surface in reader. Flagged for thinking, not built.
 - [ ] **Reading-notes inline** — surface `research/reading-notes/<cluster>.md` entries beside each article in the cluster (separate from the per-article notes already loaded by Phase 2 v2)
+- [ ] **Canon shelf** *(flagged 2026-05-31)* — render `research/_canon.md` as a first-class "Library/Canon" view, distinct from the reading *queue*. The queue is intake (to-read); canon is the durable, read-and-absorbed shelf worth re-citing. Parser reads the `## section` → `- [title](url) — when-to-reach-for-it` shape (same grammar as the queue). Surfaces the "sources in" half of the durable layer; pairs conceptually with `writing/` (synthesis out). Reuses the existing Readability cache so canon articles are offline-readable too.
 - [ ] **Reading progress (commit-as-state)** — promote the localStorage MVP (`read-state.ts`, `nav-state.ts`) to commit-backed state once it's clear what's worth persisting beyond the device
 
 **Dropped:**
