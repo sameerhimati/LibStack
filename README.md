@@ -22,7 +22,7 @@ For a road trip: AirDrop the `out/` folder to your iPad, open `out/index.html` i
 
 **Phase 1 — deploy as PWA**
 - Service worker for offline web caching
-- Deploy to `reading.itamih.com`
+- Deploy to `libstack.itamih.com` (canonical). Note: `reading.itamih.com` and `libstack.pages.dev` are aliases of the same Cloudflare Pages project (`libstack`) and redirect to the canonical origin — keep settings/read-state on one origin.
 - GitHub Action: rebuild on knowledge-vault push
 
 **Phase 2 — vault integration**

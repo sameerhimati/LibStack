@@ -4,6 +4,7 @@ import Link from "next/link";
 import RegisterSW from "@/components/RegisterSW";
 import SyncManager from "@/components/SyncManager";
 import Settings from "@/components/Settings";
+import CanonicalRedirect from "@/components/CanonicalRedirect";
 
 export const metadata: Metadata = {
   title: "LibStack",
@@ -35,6 +36,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en">
       <body className="font-sans antialiased min-h-screen">
+        <CanonicalRedirect />
         <RegisterSW />
         <SyncManager />
         <header className="border-b border-black/10 dark:border-white/10">

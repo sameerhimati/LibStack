@@ -170,7 +170,7 @@ curl ... -d '{"url":"https://example.com/not-in-queue"}'
 ```
 
 **PWA on phone:**
-- Open `reading.itamih.com` PWA on phone → Settings → enter shared secret → reload, secret persists (IndexedDB)
+- Open `libstack.itamih.com` PWA on phone → Settings → enter shared secret → reload, secret persists (IndexedDB)
 - Type a note on an article, leave page after 6 seconds → return, note still there, commit visible in vault
 - Tap mark-read on a queue article → article disappears from home view within ~60s (rebuild fires)
 - Airplane mode + type note → 'pending sync' state shown, exit airplane mode → 'synced' within 10s
