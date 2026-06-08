@@ -3,6 +3,9 @@ import typography from "@tailwindcss/typography";
 
 const config: Config = {
   content: ["./src/**/*.{ts,tsx}"],
+  // Class strategy so an in-app toggle can force a theme; the no-FOUC script in
+  // layout.tsx resolves "system" to the .dark class before paint.
+  darkMode: "class",
   theme: {
     extend: {
       fontFamily: {
