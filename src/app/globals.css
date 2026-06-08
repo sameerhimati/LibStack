@@ -68,15 +68,25 @@ a { text-underline-offset: 2px; }
    yellow-block (that's the typography plugin default). Inherits color so
    linked text inside the mark stays legible. */
 .prose mark.libstack-highlight {
-  background: rgba(212, 165, 116, 0.22);
+  /* Marker-style underline rather than a flat block: tints the text subtly and
+     draws a weighted accent line under it, so it reads as "highlighted" without
+     boxing the words or shifting the line. No horizontal padding => no sliver
+     can ever render in an inter-block gap. */
+  background: linear-gradient(rgba(212, 165, 116, 0.16), rgba(212, 165, 116, 0.16));
   color: inherit;
-  padding: 0 0.1em;
-  border-radius: 0.15rem;
+  padding: 0;
+  box-shadow: inset 0 -0.32em 0 rgba(212, 165, 116, 0.28);
+  border-radius: 0.1em;
   box-decoration-break: clone;
   -webkit-box-decoration-break: clone;
 }
+/* Defense in depth: a blank mark (should never be created now) shows nothing. */
+.prose mark.libstack-highlight:empty {
+  display: none;
+}
 @media (prefers-color-scheme: dark) {
   .prose mark.libstack-highlight {
-    background: rgba(212, 165, 116, 0.28);
+    background: linear-gradient(rgba(212, 165, 116, 0.18), rgba(212, 165, 116, 0.18));
+    box-shadow: inset 0 -0.32em 0 rgba(212, 165, 116, 0.4);
   }
 }

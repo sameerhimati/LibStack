@@ -28,30 +28,50 @@ function trimRangeWhitespace(range: Range): Range {
   return t;
 }
 
-// Wrap a Range with a <mark>. Fast path: surroundContents (single text node).
-// Multi-node ranges throw — fall back to extract/insert which handles crossing
-// inline elements like <a> or <em> inside the quote. Refuses ranges whose
-// visible text is whitespace-only — those produce tall thin ghost marks in
-// the gaps between block elements.
+// Wrap a Range with one <mark> per intersected text run, sharing one id. Going
+// text-node by text-node (instead of surroundContents/extractContents on the
+// whole range) is what keeps a cross-paragraph selection from producing a
+// <mark> that swallows block <p> elements — or, when the drag grabs only the
+// whitespace between blocks, a tall thin ghost bar. Blank runs are skipped, so
+// neither artifact can form. Returns the first mark (the edit handler resolves
+// the rest by id).
 function applyMark(range: Range, id: string): HTMLElement | null {
   if (range.collapsed) return null;
   if (range.toString().trim().length === 0) return null;
-  const mark = document.createElement("mark");
-  mark.className = "libstack-highlight";
-  mark.dataset.libstackId = id;
-  try {
-    range.surroundContents(mark);
-    return mark;
-  } catch {
-    try {
-      const fragment = range.extractContents();
-      mark.appendChild(fragment);
-      range.insertNode(mark);
-      return mark;
-    } catch {
-      return null;
+
+  // Collect text nodes the range touches, in document order.
+  const root = range.commonAncestorContainer;
+  const textNodes: Text[] = [];
+  if (root.nodeType === Node.TEXT_NODE) {
+    textNodes.push(root as Text);
+  } else {
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    let n: Node | null;
+    while ((n = walker.nextNode())) {
+      if (range.intersectsNode(n)) textNodes.push(n as Text);
     }
   }
+
+  let first: HTMLElement | null = null;
+  for (const node of textNodes) {
+    const sub = document.createRange();
+    sub.selectNodeContents(node);
+    if (range.startContainer === node) sub.setStart(node, range.startOffset);
+    if (range.endContainer === node) sub.setEnd(node, range.endOffset);
+    // Skip blank runs (the inter-block whitespace that became ghost bars).
+    if (sub.collapsed || sub.toString().trim().length === 0) continue;
+    const mark = document.createElement("mark");
+    mark.className = "libstack-highlight";
+    mark.dataset.libstackId = id;
+    try {
+      sub.surroundContents(mark); // single text node → always safe
+      if (!first) first = mark;
+    } catch {
+      // A boundary node that isn't cleanly wrappable — skip it rather than
+      // risk a malformed mark.
+    }
+  }
+  return first;
 }
 
 // Unwrap a <mark> in place: replace it with its children. The text reverts to
@@ -165,9 +185,15 @@ export default function ArticleActions({
       const mark = target?.closest("mark.libstack-highlight") as HTMLElement | null;
       if (!mark) return;
       e.preventDefault();
+      const id = mark.dataset.libstackId ?? "";
       setEditMark(mark);
-      setEditId(mark.dataset.libstackId ?? "");
-      setEditQuote(mark.textContent ?? "");
+      setEditId(id);
+      // A highlight may be several adjacent <mark> fragments (it crossed an
+      // inline/block boundary) — join them so the modal shows the whole quote.
+      const fragments = id
+        ? Array.from(prose.querySelectorAll(`mark.libstack-highlight[data-libstack-id="${id}"]`))
+        : [mark];
+      setEditQuote(fragments.map((f) => f.textContent ?? "").join(""));
     };
     prose.addEventListener("click", onClick);
     return () => prose.removeEventListener("click", onClick);
@@ -285,7 +311,15 @@ export default function ArticleActions({
     } catch (e) {
       console.error("queue removal failed", e);
     }
-    unwrapMark(editMark);
+    // Unwrap every fragment of this highlight, not just the tapped one.
+    const prose = document.querySelector(".prose");
+    const fragments =
+      editId && prose
+        ? (Array.from(
+            prose.querySelectorAll(`mark.libstack-highlight[data-libstack-id="${editId}"]`),
+          ) as HTMLElement[])
+        : [editMark];
+    for (const f of fragments) unwrapMark(f);
     setEditMark(null);
     void pendingCount().then(setPending);
   }
