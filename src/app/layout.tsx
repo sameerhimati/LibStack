@@ -4,6 +4,12 @@ import Link from "next/link";
 import RegisterSW from "@/components/RegisterSW";
 import SyncManager from "@/components/SyncManager";
 import Settings from "@/components/Settings";
+import CanonicalRedirect from "@/components/CanonicalRedirect";
+import ThemeToggle from "@/components/ThemeToggle";
+
+// Runs synchronously before paint so a forced theme doesn't flash the system
+// one. Mirrors the logic in ThemeToggle.apply().
+const THEME_INIT = `(function(){try{var t=localStorage.getItem('libstack:theme')||'system';var d=t==='dark'||(t==='system'&&matchMedia('(prefers-color-scheme: dark)').matches);var e=document.documentElement;e.classList.toggle('dark',d);e.style.colorScheme=d?'dark':'light';}catch(_){}})();`;
 
 export const metadata: Metadata = {
   title: "LibStack",
@@ -35,12 +41,17 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en">
       <body className="font-sans antialiased min-h-screen">
+        <script dangerouslySetInnerHTML={{ __html: THEME_INIT }} />
+        <CanonicalRedirect />
         <RegisterSW />
         <SyncManager />
         <header className="border-b border-black/10 dark:border-white/10">
           <div className="max-w-4xl mx-auto px-6 py-4 flex items-baseline justify-between">
             <Link href="/" className="text-lg font-semibold tracking-tight">LibStack</Link>
-            <Settings />
+            <div className="flex items-baseline gap-4">
+              <ThemeToggle />
+              <Settings />
+            </div>
           </div>
         </header>
         <main className="max-w-4xl mx-auto px-6 py-8">{children}</main>

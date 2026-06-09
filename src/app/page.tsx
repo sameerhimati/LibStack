@@ -2,6 +2,7 @@ import { loadLibrary } from "@/lib/articles";
 import Search from "@/components/Search";
 import ClusterSection from "@/components/ClusterSection";
 import ResumeSurface from "@/components/ResumeSurface";
+import ScrollRestorer from "@/components/ScrollRestorer";
 
 export default function Home() {
   const lib = loadLibrary();
@@ -25,6 +26,7 @@ export default function Home() {
 
   return (
     <div className="space-y-8">
+      <ScrollRestorer />
       <header>
         <h1 className="text-3xl font-semibold tracking-tight">Reading list</h1>
         <p className="mt-2 text-sm text-muted">

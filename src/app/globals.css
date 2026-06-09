@@ -4,7 +4,8 @@
 @tailwind components;
 @tailwind utilities;
 
-:root { color-scheme: light dark; }
+:root { color-scheme: light; }
+.dark { color-scheme: dark; }
 
 html, body {
   background: theme(colors.paper);
@@ -13,10 +14,11 @@ html, body {
   -webkit-text-size-adjust: 100%;
 }
 
-@media (prefers-color-scheme: dark) {
-  html, body { background: #15140f; color: #ece8df; }
-  .prose { --tw-prose-body: #ece8df; --tw-prose-headings: #fff; --tw-prose-links: #d4a574; }
-}
+/* Dark theme is driven by a .dark class on <html> (set by the no-FOUC script in
+   layout.tsx + ThemeToggle), not the OS media query — so the in-app toggle can
+   override the system setting. "System" mode re-adds .dark to match the OS. */
+.dark, .dark body { background: #15140f; color: #ece8df; }
+.dark .prose { --tw-prose-body: #ece8df; --tw-prose-headings: #fff; --tw-prose-links: #d4a574; }
 
 .prose { max-width: 68ch; }
 .prose img { border-radius: 0.5rem; }
@@ -53,13 +55,11 @@ html, body {
   background-size: 2rem 100%, 2rem 100%;
   background-attachment: local, scroll;
 }
-@media (prefers-color-scheme: dark) {
-  .prose pre,
-  .katex-display {
-    background-image:
-      linear-gradient(to right, #15140f, #15140f),
-      linear-gradient(to right, rgba(21, 20, 15, 0), rgba(21, 20, 15, 0.95));
-  }
+.dark .prose pre,
+.dark .katex-display {
+  background-image:
+    linear-gradient(to right, #15140f, #15140f),
+    linear-gradient(to right, rgba(21, 20, 15, 0), rgba(21, 20, 15, 0.95));
 }
 
 a { text-underline-offset: 2px; }
