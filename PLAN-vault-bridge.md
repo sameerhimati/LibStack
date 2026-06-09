@@ -206,21 +206,23 @@ v1 shipped two endpoints (notes, mark-read) on 2026-05-18 and ran in production 
 
 | Write | Vault location | Semantics |
 |---|---|---|
-| Highlight | `inbox/raw/captures/highlights/<article-slug>.md` | **Append-only** — read existing, append entry + separator, commit |
+| Highlight | `inbox/notes/highlights/<article-slug>.md` | **Append-only** — read existing, append entry + separator, commit |
 
 Per-entry format (markdown):
 
 ```
+# Highlights — <title>
+Source: libstack
+URL: <url>
+
 > Quoted text from the article. Multi-line quotes preserved.
 
 Optional comment from Sameer.
 
-<!-- libstack-highlight: 2026-05-21T12:34:56Z -->
-
----
+<!-- libstack-highlight: 2026-05-21T12:34:56Z <clientId> -->
 ```
 
-The trailing `---` separates entries; the HTML comment carries the timestamp without rendering in Obsidian. First entry in a fresh file omits no leading delimiter — just the entry then `---`. Edits to existing entries happen in Obsidian (out of phone scope).
+A `# Highlights — …` header tops a fresh file. Entries are joined by a `\n\n---\n\n` separator *between* them (no trailing `---`). The HTML comment carries the ISO timestamp and the capture clientId (per-entry identity for dedupe) without rendering in Obsidian. Edits to existing entries happen in Obsidian (out of phone scope).
 
 ### Highlights — endpoint
 
@@ -228,13 +230,13 @@ The trailing `---` separates entries; the HTML comment carries the timestamp wit
 
 - Request: `{ slug: string, title: string, url: string, mode?: string, quote: string, comment?: string }`
 - Slug validated as `/^[a-z0-9-]+$/` (matches notes endpoint).
-- Worker reads `inbox/raw/captures/highlights/<slug>.md` via GitHub Contents API (or treats as empty if 404), appends the new entry, commits with `If-Match` SHA. 409 retry × 3.
+- Worker reads `inbox/notes/highlights/<slug>.md` via GitHub Contents API (or treats as empty if 404), appends the new entry, commits with `If-Match` SHA. 409 retry × 3.
 - Commit message: `libstack: highlight — <first 40 chars of quote>…`
 - Responses: `200 { ok: true, path }` on commit; `400` for missing fields or bad slug; `401` for bad secret; `409` for unrecoverable concurrency; `502` for upstream GitHub failure.
 
 ### Highlights — UI (PWA, sheet-only in phase 1)
 
-- Bottom-right pill renames `Notes` → `Highlights (N)`. N comes from build-time parsing; in phase 1 (spike) it's always 0.
+- Bottom-right pill renames `Notes` → `Highlights (N)`. N comes from build-time parsing of the vault file (phase 2).
 - Tap pill → sheet opens with:
   - `+ Add from selection` button at top — disabled if no text is currently selected in the article body. When enabled, shows a 60-char preview of the captured selection.
   - List of existing highlights below (phase 1: empty placeholder).
@@ -249,7 +251,7 @@ The trailing `---` separates entries; the HTML comment carries the timestamp wit
 ### Highlights — build-time parsing (phase 2)
 
 `scripts/build-content.ts` mirrors the notes loader (lines 254–279) for the highlights file:
-- `existsSync` guard on `$VAULT/inbox/raw/captures/highlights/<slug>.md`.
+- `existsSync` guard on `$VAULT/inbox/notes/highlights/<slug>.md`.
 - Split file on `---` separator lines.
 - Per entry: collect lines starting `> ` as the quote; remaining paragraphs before the HTML comment as the comment; parse `<!-- libstack-highlight: ISO -->` for timestamp.
 - Attach `highlights?: Array<{ quote: string; comment?: string; timestamp: string }>` to each Article.

@@ -7,7 +7,7 @@ import katex from "katex";
 
 const VAULT = process.env.VAULT_PATH || path.join(process.env.HOME || "", "Desktop/knowledge");
 const QUEUE = path.join(VAULT, "inbox/reading-queue.md");
-const NOTES_DIR = path.join(VAULT, "inbox/raw/captures/notes");
+const HIGHLIGHTS_DIR = path.join(VAULT, "inbox/notes/highlights");
 const OUT = path.join(process.cwd(), "content/articles.json");
 const SEARCH_INDEX = path.join(process.cwd(), "public/search-index.json");
 const CACHE = path.join(process.cwd(), "content/cache");
@@ -31,8 +31,14 @@ type Article = {
   fetchedAt?: string;
   fetchError?: string;
   domain: string;
-  existingNotes?: string;
-  existingNotesHtml?: string;
+  highlights?: Highlight[];
+};
+
+type Highlight = {
+  quote: string;
+  comment?: string;
+  commentHtml?: string;
+  timestamp?: string;
 };
 
 type Cluster = { title: string; description?: string; articles: Article[] };
@@ -251,34 +257,59 @@ async function extractArticle(url: string): Promise<Partial<Article>> {
   }
 }
 
-// ── existing-notes loader ──────────────────────────────────────────────────
-// The vault-bridge worker writes notes to inbox/raw/captures/notes/<slug>.md
-// with a header block (`# title`, `Source: libstack`, `URL: ...`, optional
-// `Mode: ...`, `Updated: ...`) followed by a blank line and the body. We
-// strip the header so the reader only sees the body the user actually wrote.
+// ── highlights loader ──────────────────────────────────────────────────────
+// The vault-bridge worker appends highlights to inbox/notes/highlights/<slug>.md.
+// Each file: an optional `# Highlights — …` header, then entries separated by a
+// `---` line. Each entry is a `>` blockquote (the passage), an optional comment
+// paragraph, and an HTML-comment delimiter `<!-- libstack-highlight: ISO [id] -->`.
 
-const NOTE_HEADER_KEY = /^(#\s|Source:|URL:|Mode:|Updated:)/;
+const HL_DELIM = /^<!--\s*libstack-highlight:\s*(\S+)/;
 
-function stripNoteHeader(raw: string): string {
-  const lines = raw.split("\n");
-  let i = 0;
-  while (i < lines.length && NOTE_HEADER_KEY.test(lines[i])) i++;
-  while (i < lines.length && lines[i].trim() === "") i++;
-  return lines.slice(i).join("\n").trim();
+function parseHighlightEntry(block: string): Highlight | undefined {
+  const lines = block.split("\n");
+  const quoteLines: string[] = [];
+  const commentLines: string[] = [];
+  let timestamp: string | undefined;
+  for (const line of lines) {
+    const d = line.match(HL_DELIM);
+    if (d) {
+      timestamp = d[1];
+      continue;
+    }
+    if (/^>\s?/.test(line)) quoteLines.push(line.replace(/^>\s?/, ""));
+    else commentLines.push(line);
+  }
+  const quote = quoteLines.join("\n").trim();
+  if (!quote) return undefined; // skip malformed/blank entries
+  const comment = commentLines.join("\n").trim() || undefined;
+  return {
+    quote,
+    comment,
+    commentHtml: comment ? renderNoteMarkdown(comment) : undefined,
+    timestamp,
+  };
 }
 
-function loadExistingNote(slug: string): string | undefined {
-  const file = path.join(NOTES_DIR, `${slug}.md`);
+function loadHighlights(slug: string): Highlight[] | undefined {
+  const file = path.join(HIGHLIGHTS_DIR, `${slug}.md`);
   if (!existsSync(file)) return undefined;
   try {
-    const body = stripNoteHeader(readFileSync(file, "utf8"));
-    return body || undefined;
+    let raw = readFileSync(file, "utf8");
+    // Drop the leading file header (everything up to the first blockquote/entry).
+    raw = raw.replace(/^#\s.*$/m, "").replace(/^(Source:|URL:).*$/gm, "");
+    const blocks = raw.split(/^\s*---\s*$/m);
+    const out: Highlight[] = [];
+    for (const b of blocks) {
+      const h = parseHighlightEntry(b);
+      if (h) out.push(h);
+    }
+    return out.length ? out : undefined;
   } catch {
     return undefined;
   }
 }
 
-// Minimal markdown → HTML renderer for vault notes. Handles paragraphs,
+// Minimal markdown → HTML renderer for highlight comments. Handles paragraphs,
 // ATX headings (h2–h4), unordered/ordered lists, blockquotes, inline links,
 // **bold**, *italic*, and `code`. Anything more exotic falls through as
 // escaped paragraph text. Notes are usually short, plain, and personal —
@@ -435,23 +466,21 @@ async function main() {
   }
   await Promise.all(Array.from({ length: CONCURRENCY }, () => worker()));
 
-  // Attach any prior vault notes (written by the vault-bridge worker). Read
-  // each per-article note file once at build time and pre-render to HTML so
-  // the client doesn't need a markdown parser.
-  let notesAttached = 0;
-  if (existsSync(NOTES_DIR)) {
+  // Attach any vault highlights (appended by the vault-bridge worker). Comment
+  // markdown is pre-rendered to HTML here so the client needs no parser.
+  let highlightsAttached = 0;
+  if (existsSync(HIGHLIGHTS_DIR)) {
     for (const c of clusters) {
       for (const a of c.articles) {
-        const body = loadExistingNote(a.slug);
-        if (body) {
-          a.existingNotes = body;
-          a.existingNotesHtml = renderNoteMarkdown(body);
-          notesAttached++;
+        const hl = loadHighlights(a.slug);
+        if (hl) {
+          a.highlights = hl;
+          highlightsAttached += hl.length;
         }
       }
     }
   }
-  console.log(`Existing vault notes attached: ${notesAttached}`);
+  console.log(`Vault highlights attached: ${highlightsAttached}`);
 
   const library = { generatedAt: new Date().toISOString(), vaultPath: VAULT, clusters };
   writeFileSync(OUT, JSON.stringify(library, null, 2));

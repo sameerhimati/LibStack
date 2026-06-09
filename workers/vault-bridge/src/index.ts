@@ -1,10 +1,11 @@
 /**
  * vault-bridge — LibStack PWA → knowledge vault round-trip.
  *
- * Three endpoints, all authed by a shared secret in the `x-secret` header:
+ * Endpoints, all authed by a shared secret in the `x-secret` header:
  *   POST /api/notes        → upsert inbox/raw/captures/notes/<slug>.md (overwrite)
  *   POST /api/mark-read    → flip [ ]→[x] for a URL in inbox/reading-queue.md
  *   POST /api/unmark-read  → flip [x]→[ ] for a URL in inbox/reading-queue.md
+ *   POST /api/highlights   → append to inbox/notes/highlights/<slug>.md
  *
  * Writes go to GitHub via the Contents API with optimistic concurrency
  * (read sha → conditional PUT → retry on 409). The vault git repo stays
@@ -20,11 +21,13 @@ const REPO = "sameerhimati/knowledge";
 const BRANCH = "main";
 const QUEUE_PATH = "inbox/reading-queue.md";
 const NOTES_DIR = "inbox/raw/captures/notes";
+const HIGHLIGHTS_DIR = "inbox/notes/highlights";
 const MAX_BODY_BYTES = 256 * 1024;
 const RETRIES = 3;
 
 const ALLOWED_ORIGINS = new Set([
-  "https://reading.itamih.com",
+  "https://libstack.itamih.com", // canonical
+  "https://reading.itamih.com", // alias (redirects to canonical, but allow pre-redirect calls)
   "http://localhost:3000",
 ]);
 
@@ -280,6 +283,66 @@ async function handleUnmarkRead(
   return json(409, { error: "conflict after retries" }, origin);
 }
 
+// ── endpoint: highlights ───────────────────────────────────────────────────
+// Append-only: one file per article, entries separated by `---`. Each entry is
+// a blockquote (the passage), an optional comment paragraph, and an HTML-comment
+// delimiter carrying the ISO timestamp + clientId (so the build parser can split
+// reliably and dedupe). Build loader counterpart lives in scripts/build-content.ts.
+
+interface HighlightPayload {
+  clientId?: string;
+  slug?: string;
+  title?: string;
+  url?: string;
+  quote?: string;
+  comment?: string;
+}
+
+async function handleHighlights(
+  env: Env,
+  p: HighlightPayload,
+  origin: string | null,
+): Promise<Response> {
+  if (!p.slug || typeof p.quote !== "string" || !p.quote.trim()) {
+    return json(400, { error: "slug and quote required" }, origin);
+  }
+  if (!/^[a-z0-9-]+$/.test(p.slug)) {
+    return json(400, { error: "invalid slug" }, origin);
+  }
+  const path = `${HIGHLIGHTS_DIR}/${p.slug}.md`;
+  const quote = p.quote.trim();
+  const ts = new Date().toISOString();
+  const blockquote = quote
+    .split("\n")
+    .map((l) => `> ${l}`)
+    .join("\n");
+  const parts = [blockquote];
+  if (p.comment && p.comment.trim()) parts.push(p.comment.trim());
+  parts.push(`<!-- libstack-highlight: ${ts}${p.clientId ? ` ${p.clientId}` : ""} -->`);
+  const entry = parts.join("\n\n");
+
+  for (let attempt = 0; attempt < RETRIES; attempt++) {
+    const existing = await ghGet(env, path);
+    let file: string;
+    if (existing) {
+      file = `${existing.content.replace(/\s+$/, "")}\n\n---\n\n${entry}\n`;
+    } else {
+      const header = [
+        `# Highlights — ${p.title || p.slug}`,
+        `Source: libstack`,
+        `URL: ${p.url || ""}`,
+      ].join("\n");
+      file = `${header}\n\n${entry}\n`;
+    }
+    const msg = `libstack: highlight — ${quote.slice(0, 40)}${quote.length > 40 ? "…" : ""}`;
+    const put = await ghPut(env, path, file, msg, existing?.sha);
+    if (put.ok) return json(200, { ok: true, path }, origin);
+    if (put.status === 409) continue; // sha race — re-read and retry
+    return json(502, { error: `github ${put.status}`, detail: await put.text() }, origin);
+  }
+  return json(409, { error: "conflict after retries" }, origin);
+}
+
 // ── dispatcher ─────────────────────────────────────────────────────────────
 
 export default {
@@ -318,6 +381,9 @@ export default {
       }
       if (url.pathname === "/api/unmark-read") {
         return await handleUnmarkRead(env, payload as { url?: string }, origin);
+      }
+      if (url.pathname === "/api/highlights") {
+        return await handleHighlights(env, payload as HighlightPayload, origin);
       }
       return json(404, { error: "unknown endpoint" }, origin);
     } catch (e) {

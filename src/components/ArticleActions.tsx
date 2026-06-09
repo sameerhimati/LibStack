@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { sendOrQueue } from "@/lib/vault-bridge";
 import { dropOrphanHighlights, pendingCount, randomId, removePendingByClientId } from "@/lib/write-queue";
 import { markReadLocally, unmarkReadLocally } from "@/lib/read-state";
+import type { Highlight } from "@/lib/types";
 
 type SaveState = "idle" | "saving" | "saved" | "queued" | "error";
 
@@ -92,12 +93,14 @@ export default function ArticleActions({
   url,
   mode,
   initialRead = false,
+  highlights = [],
 }: {
   slug: string;
   title: string;
   url: string;
   mode?: string;
   initialRead?: boolean;
+  highlights?: Highlight[];
 }) {
   const [read, setRead] = useState(initialRead);
   const [readMsg, setReadMsg] = useState<string | null>(null);
@@ -332,7 +335,7 @@ export default function ArticleActions({
     error: { dot: "bg-red-600", label: "save failed — see settings" },
   };
 
-  const highlightCount = 0;
+  const highlightCount = highlights.length;
 
   return (
     <>
@@ -442,11 +445,37 @@ export default function ArticleActions({
 
               <section>
                 <div className="mb-2 text-[11px] uppercase tracking-wider text-muted">
-                  Saved highlights
+                  Saved highlights{highlightCount > 0 ? ` (${highlightCount})` : ""}
                 </div>
-                <p className="text-sm text-muted">
-                  No highlights yet. Tap any highlight in the article to remove it.
-                </p>
+                {highlights.length === 0 ? (
+                  <p className="text-sm text-muted">
+                    No highlights yet. Tap any highlight in the article to remove it.
+                  </p>
+                ) : (
+                  <ul className="space-y-3">
+                    {highlights.map((h, i) => (
+                      <li
+                        key={h.timestamp ?? i}
+                        className="rounded border border-black/10 px-3 py-2 dark:border-white/10"
+                      >
+                        <blockquote className="border-l-2 border-accent pl-2 text-sm italic leading-relaxed">
+                          {h.quote}
+                        </blockquote>
+                        {h.commentHtml && (
+                          <div
+                            className="prose prose-sm prose-stone mt-2 max-w-none dark:prose-invert"
+                            dangerouslySetInnerHTML={{ __html: h.commentHtml }}
+                          />
+                        )}
+                        {h.timestamp && (
+                          <div className="mt-1 text-right text-[11px] text-muted">
+                            {new Date(h.timestamp).toLocaleDateString()}
+                          </div>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </section>
             </div>
 

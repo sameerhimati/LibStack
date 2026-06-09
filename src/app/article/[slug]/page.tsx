@@ -26,6 +26,7 @@ export default function ArticlePage({ params }: { params: { slug: string } }) {
           url={article.url}
           mode={article.mode}
           initialRead={article.read}
+          highlights={article.highlights}
         />
         <div className="space-y-2">
           <div className="flex items-baseline gap-3">
