@@ -1,6 +1,6 @@
 name = "vault-bridge"
 main = "src/index.ts"
-account_id = "3665dc371e2496fd438127cf5a335e1c"
+# account_id — set via `wrangler login` or CLOUDFLARE_ACCOUNT_ID env var
 compatibility_date = "2024-05-12"
 workers_dev = true
 

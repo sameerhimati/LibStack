@@ -11,3 +11,9 @@ public/search-index.json
 .env*
 .claude/
 tsconfig.tsbuildinfo
+
+# agent/session scaffolding — local only
+CLAUDE.md
+session-handoff.md
+AGENTS.md
+.claude/
